@@ -53,4 +53,34 @@ class TellingTest {
         assertTrue(Telling.refetch(still, still.copy(at = still.at + Telling.REFETCH_MS)))
         assertTrue(Telling.refetch(still, still.copy(latitude = 58.55, at = still.at + 1_000L)))
     }
+
+    @Test
+    fun aTellingSaysWhichWayFromTheCarAndHowFar() {
+        // Heading north; the bridge 110 m ahead.
+        val driving = still.copy(speed = 20.0)
+        assertEquals("Rett frem, 100 meter unna: Nidelva bru. Til høyre renner Nidelva ut i havet.",
+            Telling.spoken(bru, driving))
+        // Heading east instead: the bridge is to the left.
+        assertEquals("Til venstre, 100 meter unna: Nidelva bru. Til høyre renner Nidelva ut i havet.",
+            Telling.spoken(bru, driving.copy(heading = 90.0)))
+    }
+
+    @Test
+    fun aTellingDoesNotSayTheNameTwice() {
+        val lake = merdo.copy(said = "Merdø er en øy med uthavn.")
+        val far = still.copy(latitude = 58.488, speed = 20.0)
+        assertEquals("Rett frem, 1,3 kilometer unna: Merdø er en øy med uthavn.", Telling.spoken(lake, far))
+    }
+
+    @Test
+    fun standingStillTheDirectionIsByCompass() {
+        assertEquals("Mot nord, 100 meter unna: Nidelva bru. Til høyre renner Nidelva ut i havet.",
+            Telling.spoken(bru, still))
+    }
+
+    @Test
+    fun aNoteIsReadAsRoySaidIt() {
+        val note = bru.copy(kind = "note", said = "En melding du la igjen her: kjøp ved.")
+        assertEquals("En melding du la igjen her: kjøp ved.", Telling.spoken(note, still.copy(speed = 20.0)))
+    }
 }

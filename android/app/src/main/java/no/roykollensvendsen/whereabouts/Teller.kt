@@ -92,7 +92,8 @@ class Teller(
         if (audio.requestAudioFocus(focus) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) return
         val place = waiting.removeFirst()
         speaking = true
-        speech.speak(place.said, TextToSpeech.QUEUE_ADD, null, "place-${place.id}")
+        val text = if (place.id == SAID) place.said else Telling.spoken(place, lastHeard)
+        speech.speak(text, TextToSpeech.QUEUE_ADD, null, "place-${place.id}")
         // The map points at the place while it is told, from where it was told.
         if (place.id != SAID) lastHeard?.let { from -> show("{\"id\":${place.id},\"from_latitude\":${from.latitude},\"from_longitude\":${from.longitude}}") }
     }
@@ -146,6 +147,7 @@ class Teller(
                     longitude = one.getDouble("longitude"),
                     radiusM = one.getDouble("radius_m"),
                     said = one.getString("said"),
+                    kind = one.optString("kind", "place"),
                 )
             }
             Log.i(TAG, "places near: ${places.size}")

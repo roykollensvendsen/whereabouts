@@ -8,6 +8,7 @@ data class Place(
     val longitude: Double,
     val radiusM: Double,
     val said: String,
+    val kind: String = "place",
 )
 
 /**
@@ -46,6 +47,45 @@ object Telling {
         lastFetched == null ||
             now.at - lastFetched.at >= REFETCH_MS ||
             Change.metres(lastFetched, now) >= REFETCH_METRES
+
+    /**
+     * What is said: where the place lies from the car right now, then the text.
+     * Roy, 2026-10-10: say how far, and which way from the car, or it is hard
+     * to know what is meant. A note he left is read as he said it.
+     */
+    fun spoken(place: Place, now: Reading?): String {
+        if (now == null || place.kind == "note") return place.said
+        val metres = Change.metres(now, at(place))
+        val where = if (metres < HERE_METRES) "Her" else "${direction(place, now)}, ${distance(metres)} unna"
+        val named = place.name.isBlank() || place.said.contains(place.name, ignoreCase = true)
+        return "$where: " + if (named) place.said else "${place.name}. ${place.said}"
+    }
+
+    /** Which way the place lies from the car, or by compass when standing still. */
+    fun direction(place: Place, now: Reading): String {
+        val bearing = Trip.heading(now.latitude, now.longitude, place.latitude, place.longitude)
+        val heading = now.heading
+        if (heading == null || (now.speed ?: 0.0) < STILL) return "Mot " + COMPASS[((bearing + 22.5) / 45).toInt() % 8]
+        val turn = ((bearing - heading + 540.0) % 360.0) - 180.0
+        val side = if (turn < 0) "venstre" else "høyre"
+        val off = kotlin.math.abs(turn)
+        return when {
+            off <= 20 -> "Rett frem"
+            off <= 60 -> "Litt til $side"
+            off <= 120 -> "Til $side"
+            off <= 160 -> "Bak deg til $side"
+            else -> "Bak deg"
+        }
+    }
+
+    /** A distance as it is said: to the nearest 50 metres, or in kilometres with one decimal. */
+    fun distance(metres: Double): String =
+        if (metres < 1000) "${(Math.round(metres / 50) * 50).coerceAtLeast(50)} meter"
+        else "%.1f kilometer".format(java.util.Locale.forLanguageTag("nb-NO"), metres / 1000)
+
+    private const val HERE_METRES = 60.0
+    private const val STILL = 1.5
+    private val COMPASS = listOf("nord", "nordøst", "øst", "sørøst", "sør", "sørvest", "vest", "nordvest")
 
     private fun at(place: Place) = Reading(place.latitude, place.longitude, null, null, 0L)
 }
