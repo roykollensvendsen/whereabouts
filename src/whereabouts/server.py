@@ -95,6 +95,8 @@ def tools(
             "direction": geo.compass(fix.heading) if fix.moving() and fix.heading is not None else None,
             "km_h": round((fix.speed or 0.0) * 3.6) if fix.speed is not None else None,
             "seconds_old": round(time.time() - fix.at),
+            # The phone app's version and where its sound goes, as it last said: not to read aloud unasked.
+            "phone": dict(route.phone),
         }
 
     def whats_around(side: str) -> str:
@@ -305,10 +307,15 @@ def routes(
     async def reading(request: Request) -> Response:
         """Keep one reading from the phone."""
         try:
-            fix = geo.fix_from(json.loads(await request.body() or b"{}"))
+            body = json.loads(await request.body() or b"{}")
+            fix = geo.fix_from(body)
         except (ValueError, TypeError, AttributeError):
             return JSONResponse({"error": "a reading is latitude and longitude, with heading and speed"}, 400)
         route.add(fix)
+        # Roy, 2026-10-10: nobody should have to ask him which app he runs or where its sound goes.
+        about = {key: str(body[key])[:80] for key in ("app", "sound") if key in body}
+        if about:
+            route.phone.update(about, at=time.strftime("%H:%M"))
         return JSONResponse({"kept": True})
 
     async def route_json(request: Request) -> Response:

@@ -32,6 +32,8 @@ class Route:
         if path is not None:
             path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.lock = threading.Lock()
+        # What the phone last said about itself: its app version and where its sound goes. In memory only.
+        self.phone: dict[str, object] = {}
         self.db = sqlite3.connect(str(path) if path else ":memory:", check_same_thread=False)
         if path is not None:
             path.chmod(0o600)

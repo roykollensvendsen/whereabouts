@@ -135,3 +135,14 @@ def test_a_call_needs_no_session_so_a_restart_breaks_nothing(route):
         answer = client.post("/mcp", json=call_where, headers=headers)
     assert answer.status_code == 200
     assert answer.json()["result"]["structuredContent"]["place"] == "Skuggevik"
+
+
+def test_the_phone_says_which_app_it_runs_and_where_its_sound_goes(route):
+    mcp = server.build(route, namer=named)
+    with TestClient(mcp.streamable_http_app()) as client:
+        client.post(
+            "/reading", json={**SKUGGEVIK, "app": "0.10", "sound": "bilens handsfree, som en samtale"}
+        )
+    phone = call(mcp, "where_am_i")["phone"]
+    assert phone["app"] == "0.10"
+    assert phone["sound"] == "bilens handsfree, som en samtale"

@@ -31,6 +31,7 @@ class Following : Service(), LocationListener {
     private var last: Reading? = null
     private val sender = Executors.newSingleThreadExecutor()
     private var teller: Teller? = null
+    private val version: String by lazy { packageManager.getPackageInfo(packageName, 0).versionName ?: "?" }
 
     @SuppressLint("MissingPermission") // checked just below
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -70,6 +71,9 @@ class Following : Service(), LocationListener {
             reading.heading?.let { append(",\"heading\":").append(it) }
             reading.speed?.let { append(",\"speed\":").append(it) }
             append(",\"at\":").append(reading.at / 1000.0)
+            // Roy, 2026-10-10: the phone says which app it runs and where its sound goes, so nobody asks him.
+            append(",\"app\":\"").append(version).append('"')
+            teller?.let { append(",\"sound\":\"").append(it.route()).append('"') }
             append('}')
         }
         try {
