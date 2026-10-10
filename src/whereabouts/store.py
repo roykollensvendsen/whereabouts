@@ -6,6 +6,7 @@ once. Nothing here leaves the machine; the file is the person's.
 
 from __future__ import annotations
 
+import itertools
 import os
 import pathlib
 import sqlite3
@@ -16,6 +17,17 @@ from whereabouts.geo import Fix
 
 #: How long a reading is kept.
 KEPT_DAYS = 30
+#: A silence this long, in seconds, ends one drive; the next reading begins another.
+TRIP_PAUSE = 20 * 60
+#: A drive shorter than this, in metres, is a walk around the house: not listed.
+SHORTEST_TRIP_METRES = 300
+
+
+def geo_metres(a: Fix, b: Fix) -> float:
+    """How far apart two readings are, on the ground, in metres."""
+    from whereabouts.geo import metres_between  # noqa: PLC0415 — geo imports Fix from here
+
+    return metres_between(a, b.latitude, b.longitude)
 
 
 def default_path() -> pathlib.Path:
@@ -43,6 +55,8 @@ class Route:
                 " (at REAL, latitude REAL, longitude REAL, heading REAL, speed REAL)"
             )
             self.db.execute("CREATE INDEX IF NOT EXISTS readings_at ON readings (at)")
+            # When Roy began a drive, by pressing "Følg meg".
+            self.db.execute("CREATE TABLE IF NOT EXISTS trips (at REAL)")
 
     def add(self, fix: Fix) -> None:
         """Keep one reading, and let go of any older than KEPT_DAYS."""
@@ -65,6 +79,63 @@ class Route:
         with self.lock:
             rows = self.db.execute("SELECT * FROM readings WHERE at >= ? ORDER BY at", (at,)).fetchall()
         return [_fix(row) for row in rows]
+
+    def start_trip(self, at: float | None = None) -> None:
+        """Begin a new drive now: the map shows from here on."""
+        with self.lock, self.db:
+            self.db.execute("INSERT INTO trips VALUES (?)", (time.time() if at is None else at,))
+            self.db.execute("DELETE FROM trips WHERE at < ?", (time.time() - KEPT_DAYS * 86400,))
+
+    def trip_began(self) -> float:
+        """When the drive now, or the last one, began.
+
+        Roy, 2026-10-10: show only the drive he is on, or old drives clutter
+        the map. A drive begins when he presses "Følg meg", or after the
+        phone has been silent TRIP_PAUSE, so a forgotten press or an empty
+        battery still starts a new one.
+        """
+        with self.lock:
+            (pressed,) = self.db.execute("SELECT COALESCE(MAX(at), 0) FROM trips").fetchone()
+            ats = [
+                row[0]
+                for row in self.db.execute(
+                    "SELECT at FROM readings WHERE at >= ? ORDER BY at", (time.time() - KEPT_DAYS * 86400,)
+                )
+            ]
+        began = ats[0] if ats else 0.0
+        for before, after in itertools.pairwise(ats):
+            # RULE: a silence of TRIP_PAUSE begins a new drive
+            if after - before >= TRIP_PAUSE:
+                began = after
+        return max(float(began), float(pressed))
+
+    def trips(self) -> list[dict[str, float]]:
+        """Every drive kept, newest first: when it began and ended, how far and how many readings.
+
+        A drive is cut where Roy pressed "Følg meg" or the phone was silent for
+        TRIP_PAUSE; one that hardly moved is left out.
+        """
+        with self.lock:
+            pressed = sorted(row[0] for row in self.db.execute("SELECT at FROM trips"))
+        fixes = self.since(time.time() - KEPT_DAYS * 86400)
+        drives: list[list[Fix]] = []
+        for fix in fixes:
+            last = drives[-1][-1] if drives else None
+            new = (
+                last is None
+                or fix.at - last.at >= TRIP_PAUSE
+                or any(last.at < at <= fix.at for at in pressed)
+            )
+            if new:
+                drives.append([fix])
+            else:
+                drives[-1].append(fix)
+        listed = []
+        for drive in drives:
+            metres = sum(geo_metres(a, b) for a, b in itertools.pairwise(drive))
+            if len(drive) >= 2 and metres >= SHORTEST_TRIP_METRES:  # noqa: PLR2004 — a line needs two
+                listed.append({"began": drive[0].at, "ended": drive[-1].at, "km": round(metres / 1000, 1)})
+        return listed[::-1]
 
     def forget(self) -> int:
         """Wipe the whole route, and say how many readings went."""

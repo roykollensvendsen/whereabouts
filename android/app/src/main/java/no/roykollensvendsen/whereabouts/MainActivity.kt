@@ -190,9 +190,28 @@ class MainActivity : Activity() {
         super.onPause()
     }
 
+    /** Roy, 2026-10-10: a drive begins with "Følg meg", so the map shows only this one. */
+    private fun beginTrip() {
+        val address = Settings.address(this) ?: return
+        Thread {
+            runCatching {
+                val connection = java.net.URL(address.trimEnd('/') + "/trip").openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 10_000
+                connection.responseCode
+                connection.disconnect()
+            }
+        }.start()
+    }
+
     private fun flip() {
         save()
-        if (Following.running) Following.stop(this) else Following.start(this)
+        if (Following.running) {
+            Following.stop(this)
+        } else {
+            Following.start(this)
+            beginTrip()
+        }
         ticking.postDelayed({ draw() }, 300)
     }
 

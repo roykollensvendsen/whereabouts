@@ -318,14 +318,6 @@ def routes(
             route.phone.update(about, at=time.strftime("%H:%M"))
         return JSONResponse({"kept": True})
 
-    async def route_json(request: Request) -> Response:
-        """The route over the last `minutes` (default a day), as a line a map can draw."""
-        minutes = int(request.query_params.get("minutes", "1440"))
-        taken = route.since(time.time() - max(1, min(minutes, LONGEST_ROUTE_MINUTES)) * 60)
-        line = [[fix.longitude, fix.latitude] for fix in taken]
-        geometry = {"type": "LineString", "coordinates": line}
-        return JSONResponse({"type": "Feature", "geometry": geometry, "properties": {"readings": len(line)}})
-
     async def route_map(_: Request) -> Response:
         """The route on a map, with where Roy is now."""
         return HTMLResponse(MAP)
@@ -346,9 +338,43 @@ def routes(
         *pretend_routes(router, finder),
         *telling_routes(route),
         *view_routes(route, ground),
-        ("/route.geojson", "GET", route_json),
+        *trip_routes(route),
         ("/map", "GET", route_map),
         ("/described", "GET", described_json),
+    ]
+
+
+def trip_routes(route: Route) -> list[tuple[str, str, Callable[[Request], Awaitable[Response]]]]:
+    """The drive now as a line, older drives listed and drawn again, and a new drive begun."""
+
+    async def route_json(request: Request) -> Response:
+        """The drive now as a line a map can draw, or the last `minutes` when asked for."""
+        if "began" in request.query_params:
+            began = float(request.query_params["began"])
+            ended = float(request.query_params.get("ended", time.time()))
+            taken = [fix for fix in route.since(began) if fix.at <= ended]
+        elif "minutes" in request.query_params:
+            minutes = int(request.query_params["minutes"])
+            taken = route.since(time.time() - max(1, min(minutes, LONGEST_ROUTE_MINUTES)) * 60)
+        else:
+            taken = route.since(route.trip_began())
+        line = [[fix.longitude, fix.latitude] for fix in taken]
+        geometry = {"type": "LineString", "coordinates": line}
+        return JSONResponse({"type": "Feature", "geometry": geometry, "properties": {"readings": len(line)}})
+
+    async def trips_json(_: Request) -> Response:
+        """The drives kept, newest first, for the map's list."""
+        return JSONResponse({"trips": route.trips()})
+
+    async def trip(_: Request) -> Response:
+        """Roy pressed "Følg meg": a new drive begins, and the map starts afresh."""
+        route.start_trip()
+        return JSONResponse({"began": True})
+
+    return [
+        ("/route.geojson", "GET", route_json),
+        ("/trip", "POST", trip),
+        ("/trips.json", "GET", trips_json),
     ]
 
 
@@ -514,8 +540,11 @@ MAP = """<!doctype html>
   // Where Roy really is: the route and a blue dot.
   let drawn = null, here = null;
   async function draw() {
-    const minutes = new URLSearchParams(location.search).get("minutes") ?? "1440";
-    const route = await fetch(`route.geojson?minutes=${minutes}`).then((r) => r.json());
+    // The drive now, unless the page was opened with ?minutes= for a longer look back.
+    const minutes = new URLSearchParams(location.search).get("minutes");
+    const asked = shown ? `route.geojson?began=${shown.began}&ended=${shown.ended}`
+      : minutes ? `route.geojson?minutes=${minutes}` : "route.geojson";
+    const route = await fetch(asked).then((r) => r.json());
     const points = route.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
     if (!points.length) { if (!draw.fitted) map.setView([58.55, 8.85], 10); draw.fitted = true; return; }
     drawn?.remove(); here?.remove();
@@ -605,6 +634,51 @@ MAP = """<!doctype html>
     }) }).addTo(telling.layers);
     map.fitBounds(L.latLngBounds([now.from, at]).pad(0.4), { maxZoom: 16 });
   }
+
+  // Roy, 2026-10-10: old drives in a list, tapped to be drawn again; "Nå" goes back to this one.
+  let shown = null;
+  const trips_ = L.control({ position: "topleft" });
+  const tripsBox = document.createElement("div");
+  tripsBox.style = "background:#fff;border-radius:6px;font:14px system-ui;max-height:50vh;overflow:auto";
+  const tripsButton = Object.assign(document.createElement("button"), {
+    textContent: "Turer",
+    style: "padding:8px 12px;font:15px system-ui;border:0;background:#fff;border-radius:6px",
+  });
+  const tripsList = document.createElement("div");
+  tripsList.style.display = "none";
+  tripsBox.append(tripsButton, tripsList);
+  L.DomEvent.disableClickPropagation(tripsBox);
+  L.DomEvent.disableScrollPropagation(tripsBox);
+  const when = (at) => new Date(at * 1000).toLocaleString("nb-NO",
+    { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  function pick(trip) {
+    shown = trip;
+    following = !trip;
+    tripsList.style.display = "none";
+    draw.fitted = false;
+    draw().then(() => { if (trip && drawn) map.fitBounds(drawn.getBounds(), { maxZoom: 16 }); });
+  }
+  tripsButton.onclick = async () => {
+    if (tripsList.style.display === "block") { tripsList.style.display = "none"; return; }
+    const listed = await fetch("trips.json").then((r) => r.json()).catch(() => ({ trips: [] }));
+    tripsList.replaceChildren();
+    const now = Object.assign(document.createElement("div"), { textContent: "Nå" });
+    now.onclick = () => pick(null);
+    tripsList.append(now);
+    for (const trip of listed.trips) {
+      const row = document.createElement("div");
+      const minutes = Math.round((trip.ended - trip.began) / 60);
+      row.textContent = `${when(trip.began)} · ${trip.km} km · ${minutes} min`;
+      row.onclick = () => pick(trip);
+      tripsList.append(row);
+    }
+    for (const row of tripsList.children) {
+      row.style = "padding:8px 12px;border-top:1px solid #ddd;cursor:pointer";
+    }
+    tripsList.style.display = "block";
+  };
+  trips_.onAdd = () => tripsBox;
+  trips_.addTo(map);
 
   // Following: on until Roy moves the map himself; the button puts him back in the middle.
   let following = true;

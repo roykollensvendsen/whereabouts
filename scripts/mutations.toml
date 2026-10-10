@@ -104,3 +104,9 @@ name = "what was told is kept as long as the route, and no longer"
 file = "src/whereabouts/described.py"
 find = 'self\.db\.execute\("DELETE FROM told WHERE at < \?", \(time\.time\(\) - KEPT_DAYS \* 86400,\)\)'
 replace = 'pass'
+
+[[rule]]
+name = "a silence of TRIP_PAUSE begins a new drive"
+file = "src/whereabouts/store.py"
+find = 'if after - before >= TRIP_PAUSE:'
+replace = 'if False:'
