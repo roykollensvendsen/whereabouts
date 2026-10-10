@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Hvor er jeg</string>
+    <string name="follow">Følg meg</string>
+    <string name="stop">Stopp</string>
+    <string name="show_map">Vis kartet</string>
+    <string name="address_hint">https://maskinen.tailnett.ts.net:10001/</string>
+    <string name="channel">Posisjon</string>
+    <string name="following_title">Følger deg</string>
+    <string name="following_text">Sender posisjon, retning og fart når de endrer seg.</string>
+</resources>

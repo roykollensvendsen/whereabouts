@@ -60,3 +60,10 @@ def test_where_you_are_says_the_way_and_the_speed_while_moving():
         == "Du er i Skuggevik, på vei øst i omtrent 60 kilometer i timen."
     )
     assert moving.described(STILL, "Skuggevik") == "Du er i Skuggevik."
+
+
+def test_a_reading_keeps_the_time_the_phone_measured_it():
+    now = 1_800_000_000.0
+    assert moving.fix_from({"latitude": 1, "longitude": 2, "at": now - 30}, now=now).at == now - 30
+    # A phone with a wrong clock is not believed: the reading takes the time it arrived.
+    assert moving.fix_from({"latitude": 1, "longitude": 2, "at": now - 86_400}, now=now).at == now

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
 import sys
 import time
@@ -28,7 +29,8 @@ def _serve(args: argparse.Namespace) -> int:
 
     from whereabouts import server  # noqa: PLC0415 — nor the MCP library
 
-    uvicorn.run(server.app(_route(args)), host=HOST, port=args.port, log_level="info")
+    allowed = os.environ.get("WHEREABOUTS_ALLOWED_LOGIN", "")
+    uvicorn.run(server.app(_route(args), allowed=allowed), host=HOST, port=args.port, log_level="info")
     return 0
 
 

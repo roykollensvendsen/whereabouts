@@ -103,3 +103,12 @@ def test_where_says_how_old_the_latest_reading_is(tmp_path, capsys):
     Route(store).add(geo.Fix(58.6, 9.0, 90, 16, time.time() - 5))
     assert cli.main(["where", "--store", str(store)]) == 0
     assert capsys.readouterr().out.startswith("latest reading ")
+
+
+def test_through_the_tailnet_only_roy_s_own_login_is_let_in(route):
+    with TestClient(server.app(route, allowed="roy@example.com", namer=named)) as client:
+        mine = client.post("/reading", json=SKUGGEVIK, headers={"Tailscale-User-Login": "Roy@Example.com"})
+        theirs = client.post("/reading", json=SKUGGEVIK, headers={"Tailscale-User-Login": "eve@example.com"})
+        local = client.post("/reading", json=SKUGGEVIK)
+    assert (mine.status_code, theirs.status_code, local.status_code) == (200, 403, 200)
+    assert len(route.since(0)) == 2
