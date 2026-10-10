@@ -35,14 +35,22 @@ GRID = 0.00045
 HALF_WIDTH = 90
 RAY_STEP = 10
 #: How far a ray looks, and how often along it the ground is asked for, in metres.
-FARTHEST = 5000
-SAMPLE_STEP = 100
+FARTHEST = 3000
+SAMPLE_STEP = 50
 #: Eyes in a car, above the ground.
 EYES = 1.2
 #: What stands up from the land: forest hides what is behind it.
-COVER = {"Skog": 12.0, "Bebyggelse": 8.0}
+# Roy, 2026-10-10: the view was far too big; little is seen that far. Built-up land, and land the
+# height service does not name, hide what is behind them too.
+COVER = {
+    "Skog": 12.0,
+    "Tettbebyggelse": 10.0,
+    "BymessigBebyggelse": 15.0,
+    "Industriområde": 10.0,
+    "": 6.0,
+}
 #: Nearer than this the grid cannot tell the road and its verges from the forest beside it.
-OPEN_NEAR = 150
+OPEN_NEAR = 50
 #: What is looked for stands this high above its ground: a house, a mast's foot, a lake's far shore.
 TARGET = 3.0
 
@@ -108,7 +116,13 @@ def view(heights: Heights, latitude: float, longitude: float, heading: float) ->
     for index, bearing in enumerate(bearings):
         along = ground[1 + index * len(steps) : 1 + (index + 1) * len(steps)]
         seen = sight(eyes, [(metres, z, cover) for metres, (z, cover) in zip(steps, along, strict=True)])
-        rays.append({"bearing": round(bearing, 1), "reach": max(seen, default=0), "seen": seen})
+        # RULE: the view reaches only as far as the ground is seen without a break
+        reach = 0
+        for metres in steps:
+            if metres not in seen:
+                break
+            reach = metres
+        rays.append({"bearing": round(bearing, 1), "reach": reach, "seen": seen})
     return rays
 
 
@@ -130,7 +144,7 @@ def sight(eyes: float, line: list[tuple[int, float, str]]) -> list[int]:
 def outline(latitude: float, longitude: float, rays: list[dict[str, Any]]) -> list[list[float]]:
     """The view as a shape for the map: from the car out along each ray as far as it sees, and back."""
     here = geo.Fix(latitude, longitude, None, None, 0.0)
-    edge = [list(_ahead(here, ray["bearing"], max(ray["reach"], SAMPLE_STEP))) for ray in rays]
+    edge = [list(_ahead(here, ray["bearing"], max(ray["reach"], SAMPLE_STEP // 2))) for ray in rays]
     return [[latitude, longitude], *edge, [latitude, longitude]]
 
 

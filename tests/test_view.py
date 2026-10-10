@@ -15,17 +15,20 @@ def route():
 
 
 def test_what_lies_behind_higher_ground_or_forest_cannot_be_seen():
-    flat = [(100, 10.0, ""), (200, 10.0, ""), (300, 10.0, "")]
+    flat = [(100, 10.0, "DyrketMark"), (200, 10.0, "DyrketMark"), (300, 10.0, "DyrketMark")]
     assert view.sight(11.2, flat) == [100, 200, 300]
-    ridge = [(100, 10.0, ""), (200, 60.0, ""), (300, 10.0, ""), (400, 10.0, "")]
+    ridge = [(100, 10.0, "Myr"), (200, 60.0, "Myr"), (300, 10.0, "Myr"), (400, 10.0, "Myr")]
     assert view.sight(11.2, ridge) == [100, 200]
-    forest = [(100, 10.0, ""), (200, 10.0, "Skog"), (300, 10.0, ""), (400, 10.0, "")]
+    forest = [(100, 10.0, "Myr"), (200, 10.0, "Skog"), (300, 10.0, "Myr"), (400, 10.0, "Myr")]
     assert view.sight(11.2, forest) == [100, 200]
     # By the road the grid cannot tell the verge from the forest: it does not block.
-    verge = [(100, 10.0, "Skog"), (200, 10.0, ""), (300, 10.0, "")]
-    assert view.sight(11.2, verge) == [100, 200, 300]
+    verge = [(50, 10.0, "Skog"), (200, 10.0, "DyrketMark"), (300, 10.0, "DyrketMark")]
+    assert view.sight(11.2, verge) == [50, 200, 300]
+    # Built-up land hides what lies behind it.
+    town = [(100, 10.0, "Tettbebyggelse"), (200, 10.0, "DyrketMark")]
+    assert view.sight(11.2, town) == [100]
     # A hill far off rises above a forest near: it is seen.
-    hill = [(200, 10.0, "Skog"), (2000, 300.0, "")]
+    hill = [(200, 10.0, "Skog"), (2000, 300.0, "Myr")]
     assert view.sight(11.2, hill) == [200, 2000]
 
 
@@ -53,7 +56,7 @@ def test_the_view_is_half_a_circle_ahead_and_drawn_as_a_shape(route):
         out = []
         for _lon, lat in points:
             north = (lat - 58.5) * 111_320
-            out.append((200.0 if 900 <= north <= 1100 else 10.0, ""))
+            out.append((200.0 if 900 <= north <= 1100 else 10.0, "DyrketMark"))
         return out
 
     with TestClient(server.app(route, ground=ground)) as client:
@@ -67,3 +70,20 @@ def test_the_view_is_half_a_circle_ahead_and_drawn_as_a_shape(route):
     assert east["reach"] == view.FARTHEST
     assert seen["outline"][0] == seen["outline"][-1] == [58.5, 8.8]
     assert not any(math.isnan(x) for point in seen["outline"] for x in point)
+
+
+def test_the_view_reaches_only_as_far_as_the_ground_is_seen_without_a_break(route):
+    def ground(points):
+        # A ridge 300 m north hides the valley behind it; a hilltop 2 km north rises above it.
+        out = []
+        for _lon, lat in points:
+            north = (lat - 58.5) * 111_320
+            height = 60.0 if 280 <= north <= 320 else 400.0 if 1950 <= north <= 2050 else 10.0
+            out.append((height, "DyrketMark"))
+        return out
+
+    with TestClient(server.app(route, ground=ground)) as client:
+        rays = client.get("/view", params={"latitude": 58.5, "longitude": 8.8, "heading": 0}).json()["rays"]
+    ahead = next(ray for ray in rays if ray["bearing"] == 0.0)
+    assert ahead["reach"] == 300  # drawn only to the ridge
+    assert any(1950 <= metres <= 2050 for metres in ahead["seen"])  # yet the hilltop can still be told of

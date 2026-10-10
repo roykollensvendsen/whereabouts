@@ -116,3 +116,9 @@ name = "a note is placed by a precise reading when there is one"
 file = "src/whereabouts/server.py"
 find = 'precise = \[fix for fix in recent if fix\.accuracy is None or fix\.accuracy <= PRECISE_METRES\]'
 replace = 'precise = recent'
+
+[[rule]]
+name = "the view reaches only as far as the ground is seen without a break"
+file = "src/whereabouts/view.py"
+find = 'if metres not in seen:'
+replace = 'if False:'
