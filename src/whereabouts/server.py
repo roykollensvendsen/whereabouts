@@ -177,7 +177,53 @@ def telling_tools(
         """Stop telling of a place or a note: forget every one by this name, or whose words hold it."""
         return f"Glemt: {kept.forget(name)} steder."
 
-    return [describe_places, described_near, leave_note, forget_described, *finding_tools(nearby, router)]
+    return [
+        describe_places,
+        described_near,
+        leave_note,
+        forget_described,
+        *finding_tools(nearby, router),
+        *news_tools(route, kept, nearby),
+    ]
+
+
+def news_tools(route: Route, kept: described.Places, nearby: geo.Fetch | None) -> list[Callable[..., Any]]:
+    """Keeping the places fresh: what was driven past that day, and local news that fades."""
+
+    def add_local_news(news: list[dict[str, Any]], days: int = described.NEWS_DAYS) -> dict[str, Any]:
+        """Tell fresh local news about places, for `days` (at most 30) and then let it fade.
+
+        Each item is {"name", "latitude", "longitude", "said", "radius_m"}, placed
+        where the news happened or the place it is about. Write `said` yourself:
+        one or two sentences, in Norwegian, saying when and where it comes from,
+        such as "Tvedestrandsposten skrev i går at ...". News about the same
+        place by the same name replaces the older news.
+        """
+        until = time.time() + max(1, min(days, described.LONGEST_NEWS_DAYS)) * 86400
+        try:
+            done = kept.add(news, kind=described.NEWS, until=until)
+        except ValueError as wrong:
+            return {"added": 0, "updated": 0, "said": str(wrong)}
+        return {**done, "said": f"{done['added']} nyheter lagt inn, {done['updated']} byttet ut."}
+
+    def sights_on_route_taken(hours: int = 24) -> dict[str, Any]:
+        """What has a name along the route Roy drove in the last `hours` (at most 72), not yet described.
+
+        For describing, each night, what he drove past that day. Overpass is
+        asked about boxes around the route, never the route itself.
+        """
+        taken = route.since(time.time() - max(1, min(hours, 72)) * 3600)
+        road = [(fix.latitude, fix.longitude) for fix in taken]
+        found = geo.sights_on_route(road, nearby) if len(road) > 1 else []
+        told = {
+            place["name"].casefold()
+            for sight in found
+            for place in kept.near(sight["latitude"], sight["longitude"], described.SAME_NAME_METRES)
+        }
+        fresh = [sight for sight in found if sight["name"].casefold() not in told]
+        return {"found": fresh, "said": f"{len(fresh)} nye navn langs ruta, av {len(found)}."}
+
+    return [add_local_news, sights_on_route_taken]
 
 
 def finding_tools(nearby: geo.Fetch | None, router: Router | None) -> list[Callable[..., Any]]:

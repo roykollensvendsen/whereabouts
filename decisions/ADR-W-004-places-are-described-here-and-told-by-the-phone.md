@@ -42,6 +42,14 @@ Roy can also leave a note by voice: `leave_note` keeps what he says where he
 is at that moment, and it is told back to him every time he passes, until he
 asks to forget it. A note is never merged with a place or with another note.
 
+Each night Hermes looks at the route driven that day with
+`sights_on_route_taken`, describes what has a name along it and is not
+described yet, and adds fresh local news about those places with
+`add_local_news` (Roy, 2026-10-10: "fint å få oppdaterte nyheter som er
+knyttet til spesifikke lokale steder"). News is told for a few days, at most
+thirty, and then fades on its own. To find what lies along the route, the map
+service is asked about boxes around it, never the route itself.
+
 The phone app fetches the places near Roy from `/described` and decides on its
 own, on every GPS reading, when one is near enough. It tells of each place once
 per pass with Android's own speech, and waits while another app, such as the

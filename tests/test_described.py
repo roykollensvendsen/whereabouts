@@ -200,3 +200,48 @@ def test_no_note_is_left_without_knowing_where_roy_is(route):
     assert "vet ikke" in call(mcp, "leave_note", said="Hei")["result"]
     route.add(geo.Fix(58.5, 8.9, 90, 20, time.time() - 3600))
     assert "vet ikke" in call(mcp, "leave_note", said="Hei")["result"]
+
+
+def test_news_is_told_only_until_it_fades(route):
+    mcp = server.build(route)
+    news = {**BRU, "said": "Tvedestrandsposten skrev i går at brua stenges til helgen."}
+    assert call(mcp, "add_local_news", news=[news], days=3)["added"] == 1
+    [told] = described.Places(route).near(58.45, 8.77, 1_000)
+    assert told["kind"] == described.NEWS
+    with route.lock, route.db:
+        route.db.execute("UPDATE described SET until = ?", (time.time() - 1,))
+    assert described.Places(route).near(58.45, 8.77, 1_000) == []
+
+
+def test_news_never_replaces_the_description_of_a_place(route):
+    places = described.Places(route)
+    places.add([BRU])
+    places.add([{**BRU, "said": "Ny nyhet."}], kind=described.NEWS, until=time.time() + 3600)
+    assert sorted(place["kind"] for place in places.near(58.45, 8.77, 1_000)) == ["news", "place"]
+
+
+def test_only_what_lies_along_the_route_is_kept_from_the_boxes(route):
+    now = time.time()
+    for i in range(6):
+        route.add(geo.Fix(58.46 + i * 0.01, 8.77, 0, 20, now - 3600 + i * 60))
+    described.Places(route).add(
+        [{"name": "Allerede", "latitude": 58.48, "longitude": 8.77, "said": "Kjent."}]
+    )
+    found = {
+        "elements": [
+            {"type": "node", "lat": 58.47, "lon": 8.771, "tags": {"name": "Ved veien", "natural": "water"}},
+            {"type": "node", "lat": 58.48, "lon": 8.7701, "tags": {"name": "Allerede", "place": "hamlet"}},
+            {"type": "node", "lat": 58.47, "lon": 8.90, "tags": {"name": "Langt unna", "place": "hamlet"}},
+        ]
+    }
+    asked = []
+
+    def fetch(query):
+        asked.append(query)
+        return found
+
+    answer = call(server.build(route, nearby=fetch), "sights_on_route_taken", hours=2)
+    assert [sight["name"] for sight in answer["found"]] == ["Ved veien"]
+    # The route itself is never sent: only a box around it.
+    assert "around:" not in asked[0]
+    assert "bbox:" in asked[0]

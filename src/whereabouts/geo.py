@@ -278,8 +278,74 @@ def sights_along(road: list[tuple[float, float]], fetch: Fetch | None = None) ->
         found = fetch(query) if fetch else _overpass(query, ALONG_SECONDS)
     except (OSError, json.JSONDecodeError):
         return []
+    return _in_order(found.get("elements", []), points)
+
+
+#: The widest stretch, in degrees of latitude or longitude, searched as one box.
+BOX_DEGREES = 0.15
+
+
+def sights_on_route(route: list[tuple[float, float]], fetch: Fetch | None = None) -> list[dict[str, Any]]:
+    """What has a name along a route already driven, in the order passed.
+
+    Overpass is asked for boxes around the route, never for the route itself,
+    so where Roy drove stays on this machine; the box is narrowed to the road
+    here.
+    """
+    points = thinned(route)
+    found: list[dict[str, Any]] = []
+    for box in _boxes(points):
+        south, west, north, east = box
+        pad = ALONG_METRES / 111_320
+        bbox = f"{south - pad:.4f},{west - pad * 2:.4f},{north + pad:.4f},{east + pad * 2:.4f}"
+        query = (
+            f"[out:json][timeout:{int(ALONG_SECONDS)}][bbox:{bbox}];"
+            '(nwr[name][~"^(place|tourism|historic|natural|water|man_made|wikipedia|bridge)$"~"."];'
+            f"way[highway~{THROUGH_ROADS}][name];);"
+            "out center 2000;"
+        )
+        try:
+            found += (fetch(query) if fetch else _overpass(query, ALONG_SECONDS)).get("elements", [])
+        except (OSError, json.JSONDecodeError):
+            continue
+    here = [Fix(lat, lon, None, None, 0.0) for lat, lon in points]
+    # RULE: only what lies along the route is kept from the boxes
+    close = [
+        element
+        for element in found
+        if isinstance(element, dict)
+        and (centre := _centre(element)) is not None
+        and any(metres_between(point, *centre) <= ALONG_METRES for point in here)
+    ]
+    return _in_order(close, points)
+
+
+def _boxes(points: list[tuple[float, float]]) -> list[tuple[float, float, float, float]]:
+    """South, west, north and east of each stretch of the route no wider than BOX_DEGREES."""
+    boxes: list[tuple[float, float, float, float]] = []
+    stretch: list[tuple[float, float]] = []
+    for point in points:
+        trial = [*stretch, point]
+        lats, lons = [p[0] for p in trial], [p[1] for p in trial]
+        if stretch and (max(lats) - min(lats) > BOX_DEGREES or max(lons) - min(lons) > BOX_DEGREES):
+            boxes.append(_box(stretch))
+            stretch = [stretch[-1], point]
+        else:
+            stretch = trial
+    if stretch:
+        boxes.append(_box(stretch))
+    return boxes
+
+
+def _box(points: list[tuple[float, float]]) -> tuple[float, float, float, float]:
+    lats, lons = [p[0] for p in points], [p[1] for p in points]
+    return min(lats), min(lons), max(lats), max(lons)
+
+
+def _in_order(elements: list[Any], points: list[tuple[float, float]]) -> list[dict[str, Any]]:
+    """Each named thing once, with what it is and where, in the order the points pass it."""
     listed: dict[str, dict[str, Any]] = {}
-    for element in found.get("elements", []):
+    for element in elements:
         centre = _centre(element) if isinstance(element, dict) else None
         if centre is None:
             continue

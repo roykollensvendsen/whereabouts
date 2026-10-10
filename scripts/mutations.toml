@@ -62,3 +62,15 @@ name = "a note is never merged with a place or another note"
 file = "src/whereabouts/described.py"
 find = 'if kind == NOTE:'
 replace = 'if False:'
+
+[[rule]]
+name = "news is told only until it fades"
+file = "src/whereabouts/described.py"
+find = '" AND \(until IS NULL OR until > \?\)",'
+replace = '" AND (until IS NULL OR until > ? OR 1)",'
+
+[[rule]]
+name = "only what lies along the route is kept from the boxes"
+file = "src/whereabouts/geo.py"
+find = 'and any\(metres_between\(point, \*centre\) <= ALONG_METRES for point in here\)'
+replace = 'and True'

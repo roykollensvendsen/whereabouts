@@ -77,6 +77,8 @@ lookups or what lies ahead. Its instructions say never to read them aloud.
 | `describe_places` | Keeps places Hermes has written about, for the phone to tell of as Roy passes. |
 | `described_near` | The places already described near a point, so none is described twice. |
 | `sights_along` | Everything with a name along the road between two points: villages, farms, water, roads and sights. |
+| `sights_on_route_taken` | What has a name along the route driven in the last hours and is not described yet. |
+| `add_local_news` | Fresh local news about a place, told for some days and then gone. |
 | `leave_note` | Leaves what Roy says where he is now, read back to him the next time he passes. |
 | `forget_described` | Stops telling of a place, or of a note by a few of its words. |
 

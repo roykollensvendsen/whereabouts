@@ -36,6 +36,11 @@ SAME_SPOT_METRES = 25
 PLACE = "place"
 #: What Roy said to leave by the road, for himself the next time he passes.
 NOTE = "note"
+#: Fresh local news about a place, told until it fades.
+NEWS = "news"
+#: How long news is told, in days, unless Hermes says otherwise; and the longest.
+NEWS_DAYS = 7
+LONGEST_NEWS_DAYS = 30
 
 
 class Places:
@@ -51,8 +56,13 @@ class Places:
                 " longitude REAL, radius_m INTEGER, said TEXT, written REAL, kind TEXT DEFAULT 'place')"
             )
             self.db.execute("CREATE INDEX IF NOT EXISTS described_at ON described (latitude, longitude)")
+            columns = {row[1] for row in self.db.execute("PRAGMA table_info(described)")}
+            if "until" not in columns:  # kept before news could fade
+                self.db.execute("ALTER TABLE described ADD COLUMN until REAL")
 
-    def add(self, places: list[dict[str, Any]], kind: str = PLACE) -> dict[str, int]:
+    def add(
+        self, places: list[dict[str, Any]], kind: str = PLACE, until: float | None = None
+    ) -> dict[str, int]:
         """Keep each place, updating one already described rather than adding it twice."""
         # RULE: one call describes at most MAX_PLACES
         if len(places) > MAX_PLACES:
@@ -66,18 +76,22 @@ class Places:
                 # RULE: a place described again is updated, not added twice
                 if same is not None:
                     self.db.execute(
-                        "UPDATE described SET name=?, latitude=?, longitude=?, radius_m=?, said=?, written=?"
-                        " WHERE id=?",
-                        (*_row(place), time.time(), same),
+                        "UPDATE described SET name=?, latitude=?, longitude=?, radius_m=?, said=?, written=?,"
+                        " until=? "
+                        "WHERE id=?",
+                        (*_row(place), time.time(), until, same),
                     )
                     updated += 1
                 else:
                     self.db.execute(
-                        "INSERT INTO described (name, latitude, longitude, radius_m, said, written, kind)"
-                        " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (*_row(place), time.time(), kind),
+                        "INSERT INTO described"
+                        " (name, latitude, longitude, radius_m, said, written, kind, until)"
+                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (*_row(place), time.time(), kind, until),
                     )
                     added += 1
+        with self.lock, self.db:
+            self.db.execute("DELETE FROM described WHERE until IS NOT NULL AND until < ?", (time.time(),))
         return {"added": added, "updated": updated}
 
     def near(self, latitude: float, longitude: float, metres: float) -> list[dict[str, Any]]:
@@ -87,8 +101,10 @@ class Places:
         with self.lock:
             rows = self.db.execute(
                 "SELECT id, name, latitude, longitude, radius_m, said, kind FROM described"
-                " WHERE latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?",
-                (latitude - dlat, latitude + dlat, longitude - dlon, longitude + dlon),
+                " WHERE latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?"
+                # RULE: news is told only until it fades
+                " AND (until IS NULL OR until > ?)",
+                (latitude - dlat, latitude + dlat, longitude - dlon, longitude + dlon, time.time()),
             ).fetchall()
         here = geo.Fix(latitude, longitude, None, None, 0.0)
         found = []

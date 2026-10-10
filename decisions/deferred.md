@@ -13,5 +13,4 @@ read whenever a decision record is written and when a phase ends.
 | `CODEOWNERS` | A second person who reviews | It would name one person as the owner of everything |
 | `pre-commit` as a requirement rather than an option | A second contributor | The gates run in CI, and a hook one person installs is a hook one person maintains |
 | Telling of places in an app of its own | Telling needs maps offline, its own way of writing tours, or sharing with someone else | One app already follows Roy in the background; a second would double the GPS, the permission and the notification |
-| Hermes describing places along each day's route on his own | Roy says yes to a nightly Hermes job that reads `route_taken` and describes what it passed | It changes Hermes's setup, which is Roy's to allow |
 | Described places on the map | Roy asks to see them | Hearing them is the point; the map shows the route already driven |
