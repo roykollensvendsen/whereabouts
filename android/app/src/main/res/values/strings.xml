@@ -17,4 +17,8 @@
     <string name="pretend_stop">Stopp prøvetur</string>
     <string name="pretend_stopped">Prøveturen er stoppet.</string>
     <string name="hide_map">Skjul kartet</string>
+    <string name="try_sound">Prøv opplesning</string>
+    <string name="sound_test">Dette er en prøve fra Hvor er jeg. Hører du meg i bilen?</string>
+    <string name="sound_goes">Opplesningen går til %1$s.</string>
+    <string name="over_handsfree">Les opp over handsfree, som en samtale</string>
 </resources>

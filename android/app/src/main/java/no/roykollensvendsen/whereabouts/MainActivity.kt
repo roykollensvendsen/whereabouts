@@ -16,6 +16,7 @@ import android.view.View
 import android.view.WindowManager
 import android.webkit.WebView
 import android.widget.TextView
+import java.util.concurrent.Executors
 
 /** The address of the service, "Følg meg", and the map. Nothing else. */
 class MainActivity : Activity() {
@@ -25,6 +26,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private val ticking = Handler(Looper.getMainLooper())
     private lateinit var pretend: Pretend
+    private var trial: Teller? = null
     private var faster = Trip.FASTER[2]
 
     override fun onCreate(saved: Bundle?) {
@@ -65,6 +67,24 @@ class MainActivity : Activity() {
                 }
             }
         }
+        val overHandsfree = CheckBox(this).apply {
+            text = getString(R.string.over_handsfree)
+            isChecked = Settings.handsfree(this@MainActivity)
+            setOnCheckedChangeListener { _, on -> Settings.useHandsfree(this@MainActivity, on) }
+        }
+        // Roy, 2026-10-10: a way to hear, in the car, whether the telling comes through.
+        val trySound = Button(this).apply {
+            text = getString(R.string.try_sound)
+            setOnClickListener {
+                val tester = trial ?: Teller(this@MainActivity, Executors.newSingleThreadExecutor(), pretend = true)
+                    .also { trial = it }
+                // The speech engine needs a moment the first time.
+                postDelayed({
+                    status.text = getString(R.string.sound_goes, tester.route())
+                    tester.say(getString(R.string.sound_test))
+                }, 800)
+            }
+        }
         // A pretend drive, to hear what is told on the way.
         val pretendSaid = TextView(this)
         pretend = Pretend(this) { pretendSaid.text = it }
@@ -101,6 +121,8 @@ class MainActivity : Activity() {
             addView(address)
             addView(toggle)
             addView(telling)
+            addView(overHandsfree)
+            addView(trySound)
             addView(status)
             addView(TextView(this@MainActivity).apply {
                 text = getString(R.string.pretend_title)
@@ -128,6 +150,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         pretend.stop()
+        trial?.close()
         super.onDestroy()
     }
 
@@ -182,12 +205,21 @@ object Settings {
     private const val ADDRESS = "address"
     private const val TELLING = "telling"
     private const val TOLD = "told"
+    private const val HANDSFREE = "handsfree"
 
     fun address(context: Context): String? =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(ADDRESS, null)?.takeIf { it.isNotBlank() }
 
     fun save(context: Context, address: String) {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(ADDRESS, address).apply()
+    }
+
+    /** Whether a telling goes through the car's handsfree as a call; on unless Roy turns it off. */
+    fun handsfree(context: Context): Boolean =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean(HANDSFREE, true)
+
+    fun useHandsfree(context: Context, on: Boolean) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(HANDSFREE, on).apply()
     }
 
     fun telling(context: Context): Boolean =
