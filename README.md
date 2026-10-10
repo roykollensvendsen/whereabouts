@@ -23,11 +23,8 @@ in voice-integration.
 
 - **Take readings from the phone.** Position, direction, speed and time, every
   few seconds, over the tailnet only.
-- **Answer over MCP**, so Hermes can ask when it needs to:
-  - `where_am_i`: the place, direction, speed and how old the reading is.
-  - `whats_around`: named things on one side of the way he is going.
-  - `route`: where he has been, over a time span.
-  - `tour`: the next stop on a guided tour, and what to say there.
+- **Answer over MCP**, so Hermes can ask when it needs to. The tools are below;
+  a `tour` tool, for the next stop on a guided tour, comes later.
 - **Show the route on a map** when asked.
 
 ## What it promises
@@ -38,11 +35,45 @@ in voice-integration.
   position only in an answer to a question it asked.
 - **No key, token or position is printed or committed.**
 
+## Running it
+
+It listens on this machine only, on port 8770: MCP at `/mcp`, readings in at
+`/reading`, and the route at `/route.geojson` and on a map at `/map`.
+
+```console
+$ whereabouts serve --help
+usage: whereabouts serve [-h] [--port PORT] [--store STORE]
+
+options:
+  -h, --help     show this help message and exit
+  --port PORT    what port to listen on
+  --store STORE  where the route is kept
+```
+
+`where` says how old the latest reading is, without saying where it was:
+
+```console
+$ whereabouts where --store /tmp/whereabouts-example/route.sqlite
+no reading yet
+```
+
+Without `--store`, the route is kept in `~/.local/state/whereabouts/route.sqlite`,
+readable by this user alone.
+
+## The tools Hermes has
+
+| Tool | What it answers |
+|---|---|
+| `where_am_i` | The place, the direction, the speed, and how old the reading is. |
+| `whats_around` | Named things on one side: `venstre`, `høyre`, `foran` or `bak`. |
+| `route_taken` | How far, from where to where, and how long, over the last minutes. |
+| `forget_route` | Wipes the whole route, as "slett ruta" asks. |
+
 ## Status
 
-Nothing is built yet. The voice bridge's own first step, following the
-position during a call, is live in voice-integration, and moves here as this
-service grows.
+The first version: readings in, the four tools, and the map. The voice bridge
+still follows the position itself during a call. Passing readings here, and
+telling Hermes about this server, come next.
 
 ## Licence
 

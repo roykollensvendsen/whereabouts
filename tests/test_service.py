@@ -1,0 +1,105 @@
+"""The service end to end: a reading in, an answer out over MCP, and the route on a map."""
+
+import asyncio
+import time
+
+import pytest
+from starlette.testclient import TestClient
+
+from whereabouts import cli, geo, places, server
+from whereabouts.store import KEPT_DAYS, Route
+
+SKUGGEVIK = {"latitude": 58.6, "longitude": 9.0, "heading": 90, "speed": 60 / 3.6}
+
+
+def named(_fix):
+    return "Skuggevik"
+
+
+@pytest.fixture
+def route():
+    return Route(None)
+
+
+def call(mcp, tool, **arguments):
+    """One tool, called the way an MCP client calls it, and its structured answer."""
+    result = asyncio.run(mcp.call_tool(tool, arguments))
+    return result.structured_content or {"text": result.content[0].text}
+
+
+def test_a_reading_sent_in_is_where_hermes_is_told_roy_is(route):
+    """The walking skeleton: phone to service to Hermes, in one path."""
+    mcp = server.build(route, namer=named, nearby=lambda _q: {"elements": []})
+    with TestClient(mcp.streamable_http_app()) as client:
+        assert client.post("/reading", json=SKUGGEVIK).json() == {"kept": True}
+    answer = call(mcp, "where_am_i")
+    assert answer["known"] is True
+    assert answer["said"].startswith("Du er i Skuggevik, på vei øst i omtrent 60 kilometer i timen.")
+    assert answer["direction"] == "øst"
+    assert answer["km_h"] == 60
+
+
+def test_nothing_known_is_said_plainly(route):
+    mcp = server.build(route, namer=named)
+    assert call(mcp, "where_am_i") == {"known": False, "said": "Jeg vet ikke hvor du er ennå."}
+
+
+def test_a_reading_that_is_not_one_is_refused(route):
+    with TestClient(server.app(route, namer=named)) as client:
+        assert client.post("/reading", content=b"[1, 2]").status_code == 400
+
+
+def test_the_route_is_a_line_on_a_map(route):
+    now = time.time()
+    route.add(geo.Fix(58.6, 9.0, 90, 16, now - 120))
+    route.add(geo.Fix(58.6, 9.02, 90, 16, now - 60))
+    with TestClient(server.app(route, namer=named)) as client:
+        line = client.get("/route.geojson?minutes=10").json()
+        page = client.get("/map").text
+    assert line["geometry"]["coordinates"] == [[9.0, 58.6], [9.02, 58.6]]
+    assert "route.geojson" in page
+
+
+def test_the_route_taken_is_said_in_kilometres_and_minutes(route):
+    now = time.time()
+    route.add(geo.Fix(58.6, 9.0, 90, 16, now - 600))
+    route.add(geo.Fix(58.6, 9.1, 90, 16, now))
+    answer = call(server.build(route, namer=named), "route_taken", minutes=30)
+    assert answer["km"] == 5.8
+    assert answer["said"] == "Du har kjørt omtrent 5.8 kilometer på 10 minutter, fra Skuggevik til Skuggevik."
+
+
+def test_a_reading_is_kept_for_kept_days_and_no_longer(route):
+    old = time.time() - (KEPT_DAYS + 1) * 86400
+    route.add(geo.Fix(58.6, 9.0, at=old))
+    route.add(geo.Fix(58.6, 9.0, at=time.time()))
+    assert len(route.since(0)) == 1
+
+
+def test_slett_ruta_wipes_every_reading_at_once(route):
+    route.add(geo.Fix(58.6, 9.0, at=time.time()))
+    assert call(server.build(route, namer=named), "forget_route") == {
+        "result": "Ruta er slettet: 1 målinger."
+    }
+    assert route.latest() is None
+
+
+def test_a_place_is_looked_up_again_only_after_a_real_move():
+    looked = []
+    names = places.Names(lambda lat, _lon: looked.append(lat) or "Sted")
+    names(geo.Fix(58.6, 9.0))
+    names(geo.Fix(58.6001, 9.0))
+    names(geo.Fix(58.61, 9.0))
+    assert len(looked) == 2
+
+
+def test_the_route_file_is_for_this_user_alone(tmp_path):
+    Route(tmp_path / "state" / "route.sqlite")
+    assert (tmp_path / "state" / "route.sqlite").stat().st_mode & 0o077 == 0
+
+
+def test_where_says_how_old_the_latest_reading_is(tmp_path, capsys):
+    store = tmp_path / "route.sqlite"
+    Route(store).add(geo.Fix(58.6, 9.0, 90, 16, time.time() - 5))
+    assert cli.main(["where", "--store", str(store)]) == 0
+    assert capsys.readouterr().out.startswith("latest reading ")
