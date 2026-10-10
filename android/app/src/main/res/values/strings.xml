@@ -22,4 +22,5 @@
     <string name="sound_goes">Opplesningen går til %1$s.</string>
     <string name="over_handsfree">Les opp over handsfree, som en samtale</string>
     <string name="power_warning">Advarsel: %1$s. Trykk her for innstillingene.</string>
+    <string name="version">Hvor er jeg, versjon %1$s</string>
 </resources>

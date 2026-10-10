@@ -123,6 +123,11 @@ class MainActivity : Activity() {
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad * 2, pad, pad)
+            // Roy, 2026-10-10: show which version runs, so nobody has to guess.
+            addView(TextView(this@MainActivity).apply {
+                text = getString(R.string.version, packageManager.getPackageInfo(packageName, 0).versionName)
+                alpha = 0.7f
+            })
             addView(address)
             addView(toggle)
             addView(telling)
