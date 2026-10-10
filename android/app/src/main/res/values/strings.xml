@@ -23,4 +23,7 @@
     <string name="over_handsfree">Les opp over handsfree, som en samtale</string>
     <string name="power_warning">Advarsel: %1$s. Trykk her for innstillingene.</string>
     <string name="version">Hvor er jeg, versjon %1$s</string>
+    <string name="gps_every">GPS hvert %1$d s</string>
+    <string name="fallback_after">Mobilnett etter %1$d s</string>
+    <string name="note_lag">Meldinger plasseres %1$d s tilbake</string>
 </resources>

@@ -43,7 +43,10 @@ class Following : Service(), LocationListener {
         val locations = getSystemService(LOCATION_SERVICE) as LocationManager
         // Asked every two seconds; most are dropped by Change before they are sent.
         if (teller == null) teller = Teller(this, sender)
-        locations.requestLocationUpdates(LocationManager.GPS_PROVIDER, ASK_EVERY_MS, 0f, this, Looper.getMainLooper())
+        // Roy, 2026-10-10: every second by default, and his to choose on the screen.
+        locations.requestLocationUpdates(
+            LocationManager.GPS_PROVIDER, Settings.gpsEveryMs(this), 0f, this, Looper.getMainLooper(),
+        )
         // Roy, 2026-10-10: with the battery low, power saving turned GPS off with the screen off, and
         // readings stopped for half an hour mid-drive. Masts and wifi still answer then; coarser, but there.
         if (locations.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
@@ -103,13 +106,14 @@ class Following : Service(), LocationListener {
     override fun onLocationChanged(location: Location) {
         if (location.provider == LocationManager.GPS_PROVIDER) {
             lastGps = System.currentTimeMillis()
-        } else if (System.currentTimeMillis() - lastGps < GPS_SILENT_MS) {
+        } else if (System.currentTimeMillis() - lastGps < Settings.fallbackMs(this)) {
             return
         }
         val now = Reading(
             latitude = location.latitude,
             longitude = location.longitude,
             heading = if (location.hasBearing()) location.bearing.toDouble() else null,
+            accuracy = if (location.hasAccuracy()) location.accuracy.toDouble() else null,
             speed = if (location.hasSpeed()) location.speed.toDouble() else null,
             at = location.time,
         )
@@ -127,12 +131,14 @@ class Following : Service(), LocationListener {
             append(",\"longitude\":").append(reading.longitude)
             reading.heading?.let { append(",\"heading\":").append(it) }
             reading.speed?.let { append(",\"speed\":").append(it) }
+            reading.accuracy?.let { append(",\"accuracy\":").append(it) }
             append(",\"at\":").append(reading.at / 1000.0)
             // Roy, 2026-10-10: the phone says which app it runs and where its sound goes, so nobody asks him.
             append(",\"app\":\"").append(version).append('"')
             teller?.let { append(",\"sound\":\"").append(it.route()).append('"') }
             append(",\"power\":\"").append(Power.trouble(this@Following) ?: "ok").append('"')
             append(",\"gps\":\"").append(gpsState).append('"')
+            append(",\"note_lag\":\"").append(Settings.noteLagS(this@Following)).append('"')
             append('}')
         }
         try {
@@ -185,7 +191,6 @@ class Following : Service(), LocationListener {
 
         /** How often to ask the masts and wifi, and how long GPS must be silent before they are used. */
         private const val NETWORK_EVERY_MS = 10_000L
-        private const val GPS_SILENT_MS = 20_000L
 
         @Volatile var running = false
             private set

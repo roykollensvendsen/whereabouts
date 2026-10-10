@@ -13,6 +13,8 @@ data class Reading(
     val heading: Double?,
     val speed: Double?,
     val at: Long,
+    /** How far off the phone says it may be, in metres, when it says. */
+    val accuracy: Double? = null,
 )
 
 /**

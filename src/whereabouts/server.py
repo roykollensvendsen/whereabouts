@@ -46,6 +46,11 @@ INSTRUCTIONS = (
 #: Said when the map database did not answer, so an empty answer is never mistaken for an empty road.
 BUSY = "Kartdatabasen svarte ikke. Prøv igjen om en stund; veien er ikke tom."
 
+#: How many seconds back a note is placed unless the app says otherwise: from words to tool takes that long.
+NOTE_LAG_SECONDS = 8.0
+#: A reading at most this far off, in metres, is precise enough to place a note by.
+PRECISE_METRES = 50.0
+
 #: A telling longer than this has surely ended, even if the phone never said so.
 TELLING_FRESH_SECONDS = 90
 
@@ -171,7 +176,7 @@ def telling_tools(
         told every time he passes until he asks to forget it, by the name
         "Melding" or by its words.
         """
-        fix = route.latest()
+        fix = where_spoken(route)
         if fix is None or not fix.fresh():
             return "Jeg vet ikke hvor du er akkurat nå, så meldingen ble ikke lagt igjen."
         words = said.strip()
@@ -185,7 +190,9 @@ def telling_tools(
             "said": f"En melding du la igjen her: {words}",
         }
         kept.add([note], kind=described.NOTE)
-        return "Meldingen er lagt igjen her. Du får den lest opp neste gang du kjører forbi."
+        coarse = fix.accuracy is not None and fix.accuracy > PRECISE_METRES
+        rough = f" Posisjonen var grov, omtrent {round(fix.accuracy or 0)} meter." if coarse else ""
+        return f"Meldingen er lagt igjen her. Du får den lest opp neste gang du kjører forbi.{rough}"
 
     def forget_described(name: str) -> str:
         """Stop telling of a place or a note: forget every one by this name, or whose words hold it."""
@@ -199,6 +206,29 @@ def telling_tools(
         *finding_tools(nearby, router),
         *news_tools(route, kept, nearby),
     ]
+
+
+def where_spoken(route: Route) -> geo.Fix | None:
+    """Where Roy was when he asked to leave a note: a few seconds back, since the asking takes time.
+
+    Roy, 2026-10-10: a note should land where he drove past. From his words
+    to this tool takes seconds, at 80 km/h some hundred metres, so the
+    reading nearest that long ago is used, a precise one when there is one.
+    How far back is his own choice in the app, sent with each reading.
+    """
+    latest = route.latest()
+    if latest is None:
+        return None
+    try:
+        lag = min(max(float(str(route.phone.get("note_lag", NOTE_LAG_SECONDS))), 0.0), 30.0)
+    except ValueError:
+        lag = NOTE_LAG_SECONDS
+    wanted = time.time() - lag
+    recent = route.since(time.time() - 60)
+    # RULE: a note is placed by a precise reading when there is one
+    precise = [fix for fix in recent if fix.accuracy is None or fix.accuracy <= PRECISE_METRES]
+    pool = precise or recent or [latest]
+    return min(pool, key=lambda fix: abs(fix.at - wanted))
 
 
 def news_tools(route: Route, kept: described.Places, nearby: geo.Fetch | None) -> list[Callable[..., Any]]:
@@ -313,7 +343,9 @@ def routes(
             return JSONResponse({"error": "a reading is latitude and longitude, with heading and speed"}, 400)
         route.add(fix)
         # Roy, 2026-10-10: nobody should have to ask him which app he runs or where its sound goes.
-        about = {key: str(body[key])[:80] for key in ("app", "sound", "power", "gps") if key in body}
+        about = {
+            key: str(body[key])[:80] for key in ("app", "sound", "power", "gps", "note_lag") if key in body
+        }
         if about:
             route.phone.update(about, at=time.strftime("%H:%M"))
         return JSONResponse({"kept": True})

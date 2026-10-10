@@ -93,6 +93,8 @@ class Fix:
     heading: float | None = None
     speed: float | None = None
     at: float = 0.0
+    #: How far off the phone says the reading may be, in metres; None when it did not say.
+    accuracy: float | None = None
 
     def moving(self) -> bool:
         """Whether the direction means anything: the phone is going somewhere."""
@@ -116,6 +118,7 @@ def fix_from(body: dict[str, Any], now: float | None = None) -> Fix:
         heading=number("heading"),
         speed=number("speed"),
         at=_when(body.get("at"), time.time() if now is None else now),
+        accuracy=number("accuracy"),
     )
 
 

@@ -80,6 +80,17 @@ class MainActivity : Activity() {
             isChecked = Settings.handsfree(this@MainActivity)
             setOnCheckedChangeListener { _, on -> Settings.useHandsfree(this@MainActivity, on) }
         }
+        // Roy, 2026-10-10: how often GPS is asked, how soon the coarser network steps in, and how far
+        // back a spoken note is placed, all his to choose. They count from the next "Følg meg".
+        val gpsEvery = choice(Settings.GPS_EVERY, { Settings.gpsEveryMs(this) }, { Settings.setGpsEveryMs(this, it) }) {
+            getString(R.string.gps_every, it / 1000)
+        }
+        val fallback = choice(Settings.FALLBACK, { Settings.fallbackMs(this) }, { Settings.setFallbackMs(this, it) }) {
+            getString(R.string.fallback_after, it / 1000)
+        }
+        val noteLag = choice(Settings.NOTE_LAG, { Settings.noteLagS(this) }, { Settings.setNoteLagS(this, it) }) {
+            getString(R.string.note_lag, it)
+        }
         // Roy, 2026-10-10: a way to hear, in the car, whether the telling comes through.
         val trySound = Button(this).apply {
             text = getString(R.string.try_sound)
@@ -150,6 +161,8 @@ class MainActivity : Activity() {
             addView(toggle)
             addView(telling)
             addView(overHandsfree)
+            addView(side(gpsEvery, fallback))
+            addView(noteLag)
             addView(trySound)
             addView(status)
             addView(warning)
@@ -225,6 +238,18 @@ class MainActivity : Activity() {
         }
     }
 
+    /** A button that steps through `values` on each tap, saving the choice. */
+    private fun choice(values: List<Long>, now: () -> Long, save: (Long) -> Unit, label: (Long) -> String) =
+        Button(this).apply {
+            text = label(now())
+            isAllCaps = false
+            setOnClickListener {
+                val next = values[(values.indexOf(now()) + 1) % values.size]
+                save(next)
+                text = label(next)
+            }
+        }
+
     /** Two views side by side, sharing the width. */
     private fun side(left: View, right: View) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -272,6 +297,24 @@ object Settings {
     fun useHandsfree(context: Context, on: Boolean) {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(HANDSFREE_AS_CALL, on).apply()
     }
+
+    val GPS_EVERY = listOf(1_000L, 2_000L, 5_000L)
+    val FALLBACK = listOf(5_000L, 10_000L, 20_000L)
+    val NOTE_LAG = listOf(0L, 4L, 8L, 12L)
+
+    private fun long(context: Context, key: String, default: Long): Long =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getLong(key, default)
+
+    private fun putLong(context: Context, key: String, value: Long) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putLong(key, value).apply()
+    }
+
+    fun gpsEveryMs(context: Context) = long(context, "gps_every_ms", 1_000L)
+    fun setGpsEveryMs(context: Context, value: Long) = putLong(context, "gps_every_ms", value)
+    fun fallbackMs(context: Context) = long(context, "fallback_ms", 5_000L)
+    fun setFallbackMs(context: Context, value: Long) = putLong(context, "fallback_ms", value)
+    fun noteLagS(context: Context) = long(context, "note_lag_s", 8L)
+    fun setNoteLagS(context: Context, value: Long) = putLong(context, "note_lag_s", value)
 
     fun telling(context: Context): Boolean =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean(TELLING, true)

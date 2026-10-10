@@ -55,6 +55,8 @@ class Route:
                 " (at REAL, latitude REAL, longitude REAL, heading REAL, speed REAL)"
             )
             self.db.execute("CREATE INDEX IF NOT EXISTS readings_at ON readings (at)")
+            if "accuracy" not in {row[1] for row in self.db.execute("PRAGMA table_info(readings)")}:
+                self.db.execute("ALTER TABLE readings ADD COLUMN accuracy REAL")
             # When Roy began a drive, by pressing "Følg meg".
             self.db.execute("CREATE TABLE IF NOT EXISTS trips (at REAL)")
 
@@ -62,8 +64,8 @@ class Route:
         """Keep one reading, and let go of any older than KEPT_DAYS."""
         with self.lock, self.db:
             self.db.execute(
-                "INSERT INTO readings VALUES (?, ?, ?, ?, ?)",
-                (fix.at, fix.latitude, fix.longitude, fix.heading, fix.speed),
+                "INSERT INTO readings VALUES (?, ?, ?, ?, ?, ?)",
+                (fix.at, fix.latitude, fix.longitude, fix.heading, fix.speed, fix.accuracy),
             )
             # RULE: a reading is kept for KEPT_DAYS and no longer
             self.db.execute("DELETE FROM readings WHERE at < ?", (time.time() - KEPT_DAYS * 86400,))
@@ -147,6 +149,6 @@ class Route:
         return gone
 
 
-def _fix(row: tuple[float, float, float, float | None, float | None]) -> Fix:
-    at, latitude, longitude, heading, speed = row
-    return Fix(latitude=latitude, longitude=longitude, heading=heading, speed=speed, at=at)
+def _fix(row: tuple[float, float, float, float | None, float | None, float | None]) -> Fix:
+    at, latitude, longitude, heading, speed, accuracy = row
+    return Fix(latitude=latitude, longitude=longitude, heading=heading, speed=speed, at=at, accuracy=accuracy)

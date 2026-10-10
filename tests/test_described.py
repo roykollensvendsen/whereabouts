@@ -338,3 +338,23 @@ def test_what_was_told_is_kept_as_long_as_the_route_and_no_longer(route):
         route.db.execute("UPDATE told SET at = at - ?", ((KEPT_DAYS + 1) * 86400,))
     described.Places(route).mark_told(bru["id"])
     assert len(described.Places(route).told_since(0)) == 1
+
+
+def test_a_note_is_placed_by_a_precise_reading_when_there_is_one(route):
+    now = time.time()
+    route.add(geo.Fix(58.50, 8.90, 0, 22, now - 9, accuracy=5))  # where Roy spoke
+    route.add(geo.Fix(58.51, 8.90, 0, 22, now - 8, accuracy=400))  # a coarse one at the same moment
+    route.add(geo.Fix(58.52, 8.90, 0, 22, now - 1, accuracy=5))  # where he is when Hermes acts
+    call(server.build(route), "leave_note", said="Her var det elg")
+    [note] = [p for p in described.Places(route).near(58.51, 8.90, 5_000) if p["kind"] == described.NOTE]
+    assert (note["latitude"], note["longitude"]) == (58.50, 8.90)
+
+
+def test_how_far_back_a_note_goes_is_roys_choice_in_the_app(route):
+    now = time.time()
+    route.add(geo.Fix(58.50, 8.90, 0, 22, now - 9, accuracy=5))
+    route.add(geo.Fix(58.52, 8.90, 0, 22, now - 1, accuracy=5))
+    route.phone["note_lag"] = "0"
+    call(server.build(route), "leave_note", said="Rett her")
+    [note] = [p for p in described.Places(route).near(58.51, 8.90, 5_000) if p["kind"] == described.NOTE]
+    assert note["latitude"] == 58.52
