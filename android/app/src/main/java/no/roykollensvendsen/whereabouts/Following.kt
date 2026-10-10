@@ -30,6 +30,7 @@ class Following : Service(), LocationListener {
 
     private var last: Reading? = null
     private val sender = Executors.newSingleThreadExecutor()
+    private var teller: Teller? = null
 
     @SuppressLint("MissingPermission") // checked just below
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -40,6 +41,7 @@ class Following : Service(), LocationListener {
         }
         val locations = getSystemService(LOCATION_SERVICE) as LocationManager
         // Asked every two seconds; most are dropped by Change before they are sent.
+        if (teller == null) teller = Teller(this, sender)
         locations.requestLocationUpdates(LocationManager.GPS_PROVIDER, ASK_EVERY_MS, 0f, this, Looper.getMainLooper())
         running = true
         return START_STICKY
@@ -53,6 +55,8 @@ class Following : Service(), LocationListener {
             speed = if (location.hasSpeed()) location.speed.toDouble() else null,
             at = location.time,
         )
+        // Every reading, sent or not, may bring Roy close to a place to tell of.
+        teller?.heard(now)
         if (!Change.worthSending(last, now)) return
         last = now
         val address = Settings.address(this) ?: return
@@ -89,6 +93,7 @@ class Following : Service(), LocationListener {
 
     override fun onDestroy() {
         (getSystemService(LOCATION_SERVICE) as LocationManager).removeUpdates(this)
+        teller?.close()
         sender.shutdown()
         running = false
         super.onDestroy()

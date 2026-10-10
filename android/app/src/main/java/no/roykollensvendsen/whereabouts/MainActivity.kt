@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.text.format.DateUtils
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -32,6 +33,11 @@ class MainActivity : Activity() {
         }
         toggle = Button(this).apply { setOnClickListener { flip() } }
         status = TextView(this)
+        val telling = CheckBox(this).apply {
+            text = getString(R.string.telling)
+            isChecked = Settings.telling(this@MainActivity)
+            setOnCheckedChangeListener { _, on -> Settings.tell(this@MainActivity, on) }
+        }
         val map = Button(this).apply {
             text = getString(R.string.show_map)
             setOnClickListener {
@@ -44,6 +50,7 @@ class MainActivity : Activity() {
             setPadding(pad, pad * 2, pad, pad)
             addView(address)
             addView(toggle)
+            addView(telling)
             addView(map)
             addView(status)
         })
@@ -99,15 +106,34 @@ class MainActivity : Activity() {
     }
 }
 
-/** The one setting: where the service is. */
+/** Where the service is, whether to tell of places, and when each was last told. */
 object Settings {
     private const val FILE = "whereabouts"
     private const val ADDRESS = "address"
+    private const val TELLING = "telling"
+    private const val TOLD = "told"
 
     fun address(context: Context): String? =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(ADDRESS, null)?.takeIf { it.isNotBlank() }
 
     fun save(context: Context, address: String) {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(ADDRESS, address).apply()
+    }
+
+    fun telling(context: Context): Boolean =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean(TELLING, true)
+
+    fun tell(context: Context, on: Boolean) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(TELLING, on).apply()
+    }
+
+    /** When each place was last told, kept so a restart does not tell it again on the same pass. */
+    fun told(context: Context): Map<Long, Long> {
+        val kept = context.getSharedPreferences(FILE + "-" + TOLD, Context.MODE_PRIVATE).all
+        return kept.mapNotNull { (id, at) -> id.toLongOrNull()?.let { key -> (at as? Long)?.let { key to it } } }.toMap()
+    }
+
+    fun markTold(context: Context, id: Long, at: Long) {
+        context.getSharedPreferences(FILE + "-" + TOLD, Context.MODE_PRIVATE).edit().putLong(id.toString(), at).apply()
     }
 }

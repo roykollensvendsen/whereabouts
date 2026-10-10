@@ -8,4 +8,5 @@
     <string name="channel">Posisjon</string>
     <string name="following_title">Følger deg</string>
     <string name="following_text">Sender posisjon, retning og fart når de endrer seg.</string>
+    <string name="telling">Fortell om steder jeg passerer</string>
 </resources>
