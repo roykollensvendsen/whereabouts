@@ -26,4 +26,6 @@
     <string name="gps_every">GPS hvert %1$d s</string>
     <string name="fallback_after">Mobilnett etter %1$d s</string>
     <string name="note_lag">Meldinger plasseres %1$d s tilbake</string>
+    <string name="full_screen">Fullskjerm</string>
+    <string name="close_full">Lukk</string>
 </resources>

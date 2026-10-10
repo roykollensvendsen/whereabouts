@@ -28,6 +28,9 @@ class MainActivity : Activity() {
     private lateinit var warning: TextView
     private val ticking = Handler(Looper.getMainLooper())
     private lateinit var pretend: Pretend
+    private lateinit var mapFrame: android.widget.FrameLayout
+    private lateinit var closeFull: Button
+    private var fullScreen = false
     private var trial: Teller? = null
     private var faster = Trip.FASTER[2]
 
@@ -61,6 +64,27 @@ class MainActivity : Activity() {
             if (mapView.visibility != View.VISIBLE) {
                 mapView.loadUrl(address.text.toString().trimEnd('/') + "/map")
                 mapView.visibility = View.VISIBLE
+            }
+        }
+        // Roy, 2026-10-10: the map on the whole screen when he chooses; back or "Lukk" leaves it.
+        val close = Button(this).apply {
+            text = getString(R.string.close_full)
+            visibility = View.GONE
+            setOnClickListener { leaveFullScreen() }
+        }
+        mapFrame = android.widget.FrameLayout(this).apply {
+            addView(mapView)
+            addView(close, android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                android.view.Gravity.TOP or android.view.Gravity.END,
+            ))
+        }
+        closeFull = close
+        val full = Button(this).apply {
+            text = getString(R.string.full_screen)
+            setOnClickListener {
+                showMap()
+                enterFullScreen()
             }
         }
         val map = Button(this).apply {
@@ -140,7 +164,9 @@ class MainActivity : Activity() {
             // Roy, 2026-10-10: the bar at the top hid the first lines. From Android 15 the app draws under
             // the status bar and the navigation bar, so keep clear of them by their own size.
             setOnApplyWindowInsetsListener { view, insets ->
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                if (fullScreen) {
+                    view.setPadding(0, 0, 0, 0)
+                } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                     val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
                     view.setPadding(pad + bars.left, pad + bars.top, pad + bars.right, pad + bars.bottom)
                 } else {
@@ -173,8 +199,8 @@ class MainActivity : Activity() {
             addView(side(from, to))
             addView(side(speed, play))
             addView(pretendSaid)
-            addView(map)
-            addView(mapView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+            addView(side(map, full))
+            addView(mapFrame, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         })
         ask()
         Power.askToStayAwake(this)
@@ -189,6 +215,54 @@ class MainActivity : Activity() {
                 ticking.postDelayed(this, 5_000)
             }
         })
+    }
+
+    private fun enterFullScreen() {
+        fullScreen = true
+        val root = mapFrame.parent as LinearLayout
+        for (i in 0 until root.childCount) {
+            val child = root.getChildAt(i)
+            if (child !== mapFrame) child.visibility = View.GONE
+        }
+        root.setPadding(0, 0, 0, 0)
+        closeFull.visibility = View.VISIBLE
+        bars(show = false)
+        // Roy, 2026-10-10: in full screen the screen stays on, as a navigation app's does.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    private fun leaveFullScreen() {
+        if (!fullScreen) return
+        fullScreen = false
+        val root = mapFrame.parent as LinearLayout
+        for (i in 0 until root.childCount) root.getChildAt(i).visibility = View.VISIBLE
+        draw() // puts the warning line back to what it should be
+        closeFull.visibility = View.GONE
+        bars(show = true)
+        if (!pretend.running) window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        root.requestApplyInsets()
+    }
+
+    @Suppress("DEPRECATION") // systemUiVisibility is the way before Android 11
+    private fun bars(show: Boolean) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            val controller = window.insetsController ?: return
+            val types = WindowInsets.Type.systemBars()
+            if (show) {
+                controller.show(types)
+            } else {
+                controller.hide(types)
+                controller.systemBarsBehavior = android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            window.decorView.systemUiVisibility = if (show) 0 else
+                View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (fullScreen) leaveFullScreen() else super.onBackPressed()
     }
 
     override fun onDestroy() {
