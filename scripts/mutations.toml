@@ -74,3 +74,9 @@ name = "only what lies along the route is kept from the boxes"
 file = "src/whereabouts/geo.py"
 find = 'and any\(metres_between\(point, \*centre\) <= ALONG_METRES for point in here\)'
 replace = 'and True'
+
+[[rule]]
+name = "a pretend drive is never kept in the route"
+file = "src/whereabouts/server.py"
+find = 'pretending\.update\(latitude=latitude, longitude=longitude, at=time\.time\(\)\)'
+replace = 'route.add(geo.Fix(latitude, longitude, None, None, time.time())); pretending.update(latitude=latitude, longitude=longitude, at=time.time())'

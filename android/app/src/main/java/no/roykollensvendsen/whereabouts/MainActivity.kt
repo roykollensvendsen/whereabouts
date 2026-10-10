@@ -3,9 +3,7 @@ package no.roykollensvendsen.whereabouts
 import android.Manifest
 import android.app.Activity
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -14,7 +12,9 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.view.View
 import android.view.WindowManager
+import android.webkit.WebView
 import android.widget.TextView
 
 /** The address of the service, "Følg meg", and the map. Nothing else. */
@@ -41,11 +41,28 @@ class MainActivity : Activity() {
             isChecked = Settings.telling(this@MainActivity)
             setOnCheckedChangeListener { _, on -> Settings.tell(this@MainActivity, on) }
         }
+        // The map, inside the app: where Roy is in blue, a pretend drive in orange.
+        val mapView = WebView(this).apply {
+            settings.javaScriptEnabled = true
+            visibility = View.GONE
+        }
+        fun showMap() {
+            save()
+            if (mapView.visibility != View.VISIBLE) {
+                mapView.loadUrl(address.text.toString().trimEnd('/') + "/map")
+                mapView.visibility = View.VISIBLE
+            }
+        }
         val map = Button(this).apply {
             text = getString(R.string.show_map)
             setOnClickListener {
-                save()
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(address.text.toString().trimEnd('/') + "/map")))
+                if (mapView.visibility == View.VISIBLE) {
+                    mapView.visibility = View.GONE
+                    text = getString(R.string.show_map)
+                } else {
+                    showMap()
+                    text = getString(R.string.hide_map)
+                }
             }
         }
         // A pretend drive, to hear what is told on the way.
@@ -72,6 +89,8 @@ class MainActivity : Activity() {
                 } else {
                     pretend.start(from.text.toString().trim(), to.text.toString().trim(), faster)
                     text = getString(R.string.pretend_stop)
+                    showMap()
+                    map.text = getString(R.string.hide_map)
                     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 }
             }
@@ -82,17 +101,16 @@ class MainActivity : Activity() {
             addView(address)
             addView(toggle)
             addView(telling)
-            addView(map)
             addView(status)
             addView(TextView(this@MainActivity).apply {
                 text = getString(R.string.pretend_title)
-                setPadding(0, pad * 2, 0, 0)
+                setPadding(0, pad, 0, 0)
             })
-            addView(from)
-            addView(to)
-            addView(speed)
-            addView(play)
+            addView(side(from, to))
+            addView(side(speed, play))
             addView(pretendSaid)
+            addView(map)
+            addView(mapView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         })
         ask()
         draw()
@@ -132,6 +150,13 @@ class MainActivity : Activity() {
             Following.sent == 0L -> "Venter på første måling."
             else -> "Sist sendt " + DateUtils.getRelativeTimeSpanString(Following.sent) + "."
         }
+    }
+
+    /** Two views side by side, sharing the width. */
+    private fun side(left: View, right: View) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        addView(left, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        addView(right, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
     }
 
     private fun save() = Settings.save(this, address.text.toString().trim())

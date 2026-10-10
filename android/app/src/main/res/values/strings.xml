@@ -16,4 +16,5 @@
     <string name="pretend_start">Start prøvetur</string>
     <string name="pretend_stop">Stopp prøvetur</string>
     <string name="pretend_stopped">Prøveturen er stoppet.</string>
+    <string name="hide_map">Skjul kartet</string>
 </resources>

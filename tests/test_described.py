@@ -265,3 +265,12 @@ def test_a_pretend_drive_gets_the_road_between_two_named_places(route):
     assert missing.status_code == 404
     # A pretend drive is never kept as part of the route.
     assert route.latest() is None
+
+
+def test_a_pretend_drive_is_never_kept_in_the_route(route):
+    with TestClient(server.app(route)) as client:
+        assert client.get("/pretend.json").json() == {"active": False}
+        client.post("/pretend", json={"latitude": 58.5, "longitude": 8.8})
+        shown = client.get("/pretend.json").json()
+    assert shown == {"active": True, "latitude": 58.5, "longitude": 8.8}
+    assert route.latest() is None

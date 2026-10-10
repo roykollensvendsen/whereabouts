@@ -42,6 +42,9 @@ INSTRUCTIONS = (
     "to be heard while driving past."
 )
 
+#: A pretend position older than this means the pretend drive has ended.
+PRETEND_FRESH_SECONDS = 15
+
 #: The longest span `route` describes, in minutes: thirty days.
 LONGEST_ROUTE_MINUTES = 30 * 24 * 60
 
@@ -312,6 +315,41 @@ def routes(
         kept = described.Places(route)
         return JSONResponse({"version": kept.version(), "places": kept.near(latitude, longitude, km * 1000)})
 
+    return [
+        ("/reading", "POST", reading),
+        *pretend_routes(router, finder),
+        ("/route.geojson", "GET", route_json),
+        ("/map", "GET", route_map),
+        ("/described", "GET", described_json),
+    ]
+
+
+def pretend_routes(
+    router: Router | None, finder: Callable[[str], tuple[float, float] | None] | None
+) -> list[tuple[str, str, Callable[[Request], Awaitable[Response]]]]:
+    """A pretend drive on the phone: the road to play, and where it is now for the map."""
+    # Where a pretend drive is now, held in memory only, never kept in the route.
+    pretending: dict[str, float] = {}
+
+    async def pretend_in(request: Request) -> Response:
+        """Where the pretend drive on the phone is now, for the map to follow."""
+        try:
+            body = json.loads(await request.body() or b"{}")
+            latitude, longitude = float(body["latitude"]), float(body["longitude"])
+        except (ValueError, TypeError, KeyError):
+            return JSONResponse({"error": "a pretend position is latitude and longitude"}, 400)
+        # RULE: a pretend drive is never kept in the route
+        pretending.update(latitude=latitude, longitude=longitude, at=time.time())
+        return JSONResponse({"kept": False})
+
+    async def pretend_out(_: Request) -> Response:
+        """The pretend drive's position, while one is going."""
+        if not pretending or time.time() - pretending["at"] > PRETEND_FRESH_SECONDS:
+            return JSONResponse({"active": False})
+        return JSONResponse(
+            {"active": True, "latitude": pretending["latitude"], "longitude": pretending["longitude"]}
+        )
+
     async def road_json(request: Request) -> Response:
         """The road between two places, for a pretend drive on the phone; nothing is kept."""
         start = geo.where(request.query_params.get("from", ""), finder)
@@ -322,11 +360,9 @@ def routes(
         return JSONResponse({"points": [[round(lat, 6), round(lon, 6)] for lat, lon in road]})
 
     return [
-        ("/reading", "POST", reading),
         ("/road", "GET", road_json),
-        ("/route.geojson", "GET", route_json),
-        ("/map", "GET", route_map),
-        ("/described", "GET", described_json),
+        ("/pretend", "POST", pretend_in),
+        ("/pretend.json", "GET", pretend_out),
     ]
 
 
@@ -395,10 +431,28 @@ MAP = """<!doctype html>
     if (!points.length) { map.setView([59.9, 10.75], 5); return; }
     drawn?.remove(); here?.remove();
     drawn = L.polyline(points, { weight: 5 }).addTo(map);
-    here = L.circleMarker(points.at(-1), { radius: 8 }).addTo(map);
+    here = L.circleMarker(points.at(-1), { radius: 8 }).bindTooltip("Der du er").addTo(map);
     if (!draw.fitted) { map.fitBounds(drawn.getBounds(), { maxZoom: 16 }); draw.fitted = true; }
   }
+  // A pretend drive on the phone shows as an orange dot the map follows; it is never part of the route.
+  let pretend = null;
+  async function follow() {
+    const now = await fetch("pretend.json").then((r) => r.json()).catch(() => ({ active: false }));
+    pretend?.remove(); pretend = null;
+    if (!now.active) return;
+    pretend = L.circleMarker([now.latitude, now.longitude], { radius: 9, color: "#e8590c", fillOpacity: 0.8 })
+      .bindTooltip("Prøvetur").addTo(map);
+    map.panTo([now.latitude, now.longitude]);
+  }
+  const legend = L.control({ position: "bottomleft" });
+  legend.onAdd = () => Object.assign(document.createElement("div"), {
+    innerHTML: '<span style="color:#3388ff">●</span> Der du er &nbsp; '
+      + '<span style="color:#e8590c">●</span> Prøvetur',
+    style: "background:#fff;padding:4px 8px;border-radius:4px;font:14px system-ui",
+  });
+  legend.addTo(map);
   draw();
   setInterval(draw, 10_000);
+  setInterval(follow, 2_000);
 </script>
 """

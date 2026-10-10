@@ -25,6 +25,7 @@ class Pretend(private val context: Context, private val said: (String) -> Unit) 
     private var gone = 0.0
     private var clock = 0L
     private var faster = 1
+    private var steps = 0
 
     var running = false
         private set
@@ -68,7 +69,10 @@ class Pretend(private val context: Context, private val said: (String) -> Unit) 
                 gone += Trip.SPEED_M_S * faster * STEP_MS / 1000.0
                 clock += STEP_MS * faster
             }
-            teller.heard(trip.reading(gone, Trip.SPEED_M_S, clock))
+            val now = trip.reading(gone, Trip.SPEED_M_S, clock)
+            teller.heard(now)
+            // The map follows the pretend drive; the service keeps it in memory only, never in the route.
+            if (++steps % SHOW_EVERY == 0) show(now)
             val km = "%.1f av %.1f km".format(gone.coerceAtMost(trip.metres) / 1000, trip.metres / 1000)
             if (gone >= trip.metres && !teller.busy) {
                 running = false
@@ -77,6 +81,25 @@ class Pretend(private val context: Context, private val said: (String) -> Unit) 
             }
             said("Prøvetur, ${faster}× fart: $km" + if (teller.busy) ", forteller." else ".")
             ticking.postDelayed(this, STEP_MS)
+        }
+    }
+
+    private fun show(now: Reading) {
+        val address = Settings.address(context) ?: return
+        background.execute {
+            try {
+                val connection = URL(address.trimEnd('/') + "/pretend").openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.doOutput = true
+                connection.connectTimeout = 5_000
+                connection.setRequestProperty("Content-Type", "application/json")
+                val body = "{\"latitude\":${now.latitude},\"longitude\":${now.longitude}}"
+                connection.outputStream.use { it.write(body.toByteArray()) }
+                connection.responseCode
+                connection.disconnect()
+            } catch (failure: Exception) {
+                Log.w("Whereabouts", "could not show the pretend drive: ${failure.message}")
+            }
         }
     }
 
@@ -96,5 +119,8 @@ class Pretend(private val context: Context, private val said: (String) -> Unit) 
 
     companion object {
         private const val STEP_MS = 500L
+
+        /** Show the pretend drive on the map every this many steps: every two seconds. */
+        private const val SHOW_EVERY = 4
     }
 }
