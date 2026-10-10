@@ -13,6 +13,7 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.view.View
+import android.view.WindowInsets
 import android.view.WindowManager
 import android.webkit.WebView
 import android.widget.TextView
@@ -32,6 +33,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(saved: Bundle?) {
         super.onCreate(saved)
+        // The title bar only repeated the name, and hid the first lines; the version line names the app.
+        actionBar?.hide()
         val pad = (16 * resources.displayMetrics.density).toInt()
         address = EditText(this).apply {
             hint = getString(R.string.address_hint)
@@ -122,7 +125,22 @@ class MainActivity : Activity() {
         }
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad * 2, pad, pad)
+            setPadding(pad, pad, pad, pad)
+            // Roy, 2026-10-10: the bar at the top hid the first lines. From Android 15 the app draws under
+            // the status bar and the navigation bar, so keep clear of them by their own size.
+            setOnApplyWindowInsetsListener { view, insets ->
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                    view.setPadding(pad + bars.left, pad + bars.top, pad + bars.right, pad + bars.bottom)
+                } else {
+                    @Suppress("DEPRECATION")
+                    view.setPadding(
+                        pad + insets.systemWindowInsetLeft, pad + insets.systemWindowInsetTop,
+                        pad + insets.systemWindowInsetRight, pad + insets.systemWindowInsetBottom,
+                    )
+                }
+                insets
+            }
             // Roy, 2026-10-10: show which version runs, so nobody has to guess.
             addView(TextView(this@MainActivity).apply {
                 text = getString(R.string.version, packageManager.getPackageInfo(packageName, 0).versionName)
