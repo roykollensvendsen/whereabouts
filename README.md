@@ -62,9 +62,14 @@ readable by this user alone.
 
 ## The tools Hermes has
 
+Each answer has a `said` sentence, to be spoken, and the figures behind it:
+latitude, longitude, heading in degrees, speed in metres a second, and when it
+was measured. The figures are for Hermes to work with, such as distances, map
+lookups or what lies ahead. Its instructions say never to read them aloud.
+
 | Tool | What it answers |
 |---|---|
-| `where_am_i` | The place, the direction, the speed, and how old the reading is. |
+| `where_am_i` | The place, the direction, the speed, and how old the reading is; and the figures behind them. |
 | `whats_around` | Named things on one side: `venstre`, `høyre`, `foran` or `bak`. |
 | `route_taken` | How far, from where to where, and how long, over the last minutes. |
 | `forget_route` | Wipes the whole route, as "slett ruta" asks. |

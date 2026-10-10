@@ -29,7 +29,10 @@ if TYPE_CHECKING:
 INSTRUCTIONS = (
     "Where Roy is, which way he is going, how fast, what is around him, and the route he has "
     "taken in the last 30 days, from his phone. Ask where_am_i before saying where he is. "
-    "Say places and directions in words; never read out coordinates."
+    "Each answer has a `said` sentence to speak, and the numbers behind it: latitude, longitude, "
+    "heading in degrees, speed in metres a second, and when it was measured. Use the numbers for "
+    "work, such as distances, map lookups or what lies ahead; never read them aloud, and never "
+    "pass them anywhere he has not asked for."
 )
 
 #: The longest span `route` describes, in minutes: thirty days.
@@ -60,6 +63,8 @@ def tools(route: Route, name: places.Namer, nearby: geo.Fetch | None) -> list[Ca
             "known": True,
             "said": geo.described(fix, place, timed=True),
             "place": place,
+            # Roy, 2026-10-10: the numbers too, to work with, not to read out.
+            **numbers(fix),
             "direction": geo.compass(fix.heading) if fix.moving() and fix.heading is not None else None,
             "km_h": round((fix.speed or 0.0) * 3.6) if fix.speed is not None else None,
             "seconds_old": round(time.time() - fix.at),
@@ -86,6 +91,8 @@ def tools(route: Route, name: places.Namer, nearby: geo.Fetch | None) -> list[Ca
             "readings": len(taken),
             "km": km,
             "minutes": took,
+            "start": numbers(taken[0]),
+            "end": numbers(taken[-1]),
             "said": f"Du har kjørt omtrent {km} kilometer på {took} minutter, fra {start} til {end}.",
         }
 
@@ -94,6 +101,17 @@ def tools(route: Route, name: places.Namer, nearby: geo.Fetch | None) -> list[Ca
         return f"Ruta er slettet: {route.forget()} målinger."
 
     return [where_am_i, whats_around, route_taken, forget_route]
+
+
+def numbers(fix: geo.Fix) -> dict[str, Any]:
+    """A reading's figures, for a tool to work with; `said` is what is spoken."""
+    return {
+        "latitude": round(fix.latitude, 6),
+        "longitude": round(fix.longitude, 6),
+        "heading_degrees": None if fix.heading is None else round(fix.heading, 1),
+        "speed_m_s": None if fix.speed is None else round(fix.speed, 2),
+        "measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(fix.at)),
+    }
 
 
 def routes(route: Route) -> list[tuple[str, str, Callable[[Request], Awaitable[Response]]]]:
