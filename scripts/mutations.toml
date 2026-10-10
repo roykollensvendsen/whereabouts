@@ -92,3 +92,9 @@ name = "what lies behind higher ground or forest cannot be seen"
 file = "src/whereabouts/view.py"
 find = 'if math\.atan2\(z \+ TARGET - eyes, metres\) >= highest:'
 replace = 'if True:'
+
+[[rule]]
+name = "a map database that does not answer is said, never taken for an empty road"
+file = "src/whereabouts/geo.py"
+find = 'return None  # not answered'
+replace = 'return []'

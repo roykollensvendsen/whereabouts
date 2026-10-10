@@ -85,6 +85,9 @@ height of the land and the forest, or when Roy is within 200 m of it. Set
   within a month: it fades by itself after `days`.
 - `forget_described` removes a place Roy does not want.
 
+When a tool says the map database did not answer, the road is not empty:
+try again later, and say so in your answer rather than reporting none.
+
 ## Lessons from Roy
 
 Newest first. Add a dated line here whenever Roy says what he liked or did not.

@@ -311,3 +311,16 @@ def test_a_side_road_is_placed_where_it_meets_the_route(route):
     )["found"]
     assert (found["latitude"], found["longitude"]) == (58.5002, 8.8001)
     assert found["kind"] == "vei"
+
+
+def test_a_map_database_that_does_not_answer_is_said_never_taken_for_an_empty_road(route):
+    def busy(_query):
+        message = "504"
+        raise OSError(message)
+
+    mcp = server.build(route, nearby=busy, router=lambda _a, _b: [(58.46, 8.77), (58.62, 8.93)])
+    answer = call(
+        mcp, "sights_along", from_latitude=58.46, from_longitude=8.77, to_latitude=58.62, to_longitude=8.93
+    )
+    assert answer["found"] == []
+    assert answer["said"] == server.BUSY

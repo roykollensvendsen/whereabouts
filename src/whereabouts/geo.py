@@ -290,7 +290,7 @@ def thinned(road: list[tuple[float, float]], step: float = ALONG_STEP_METRES) ->
     return kept
 
 
-def sights_along(road: list[tuple[float, float]], fetch: Fetch | None = None) -> list[dict[str, Any]]:
+def sights_along(road: list[tuple[float, float]], fetch: Fetch | None = None) -> list[dict[str, Any]] | None:
     """What has a name along a road: places, farms, water, bridges and sights, in the order passed."""
     points = thinned(road)
     if not points:
@@ -308,7 +308,8 @@ def sights_along(road: list[tuple[float, float]], fetch: Fetch | None = None) ->
     try:
         found = fetch(query) if fetch else _overpass(query, ALONG_SECONDS)
     except (OSError, json.JSONDecodeError):
-        return []
+        # RULE: a map database that does not answer is said, never taken for an empty road
+        return None  # not answered
     return _in_order(found.get("elements", []), points)
 
 
@@ -415,15 +416,31 @@ def _apart(a: tuple[float, float], b: tuple[float, float]) -> float:
     return (a[0] - b[0]) ** 2 + ((a[1] - b[1]) * 0.5) ** 2
 
 
+#: Other copies of the same map database, asked in turn when one is busy: on 2026-10-10 the main
+#: one answered 504 to a whole road, and the road looked empty.
+NEARBY_MIRRORS = (
+    "https://overpass.private.coffee/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+)
+
+
 def _overpass(query: str, seconds: float = NEARBY_SECONDS) -> dict[str, Any]:
-    request = urllib.request.Request(
-        NEARBY_URL,
-        data=urllib.parse.urlencode({"data": query}).encode(),
-        headers={"User-Agent": POLITE},
-    )
-    with urllib.request.urlopen(request, timeout=seconds + 2) as reply:  # noqa: S310 — as above
-        found = json.loads(reply.read() or b"{}")
-    return found if isinstance(found, dict) else {}
+    """Ask the map database, trying the next copy when one is busy or down; raise only when all fail."""
+    failure: OSError | None = None
+    for url in (NEARBY_URL, *NEARBY_MIRRORS):
+        request = urllib.request.Request(  # noqa: S310 — fixed https addresses
+            url,
+            data=urllib.parse.urlencode({"data": query}).encode(),
+            headers={"User-Agent": POLITE},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=seconds + 2) as reply:  # noqa: S310 — fixed https addresses
+                found = json.loads(reply.read() or b"{}")
+        except OSError as busy:
+            failure = busy
+            continue
+        return found if isinstance(found, dict) else {}
+    raise failure or OSError("no map database answered")
 
 
 def _centre(element: dict[str, Any]) -> tuple[float, float] | None:

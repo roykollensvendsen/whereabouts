@@ -43,6 +43,9 @@ INSTRUCTIONS = (
     "to be heard while driving past."
 )
 
+#: Said when the map database did not answer, so an empty answer is never mistaken for an empty road.
+BUSY = "Kartdatabasen svarte ikke. Prøv igjen om en stund; veien er ikke tom."
+
 #: A telling longer than this has surely ended, even if the phone never said so.
 TELLING_FRESH_SECONDS = 90
 
@@ -261,6 +264,8 @@ def finding_tools(nearby: geo.Fetch | None, router: Router | None) -> list[Calla
         if not road:
             return {"found": [], "said": "Fant ingen vei mellom de to stedene."}
         found = geo.sights_along(road, nearby)
+        if found is None:
+            return {"found": [], "said": BUSY}
         return {
             "km": round(_length(road) / 1000, 1),
             "found": found,
