@@ -74,10 +74,11 @@ class MainActivity : Activity() {
         }
         mapFrame = android.widget.FrameLayout(this).apply {
             addView(mapView)
+            // Bottom middle: the map's own buttons sit in the corners, and "Følg meg" top right.
             addView(close, android.widget.FrameLayout.LayoutParams(
                 android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
-                android.view.Gravity.TOP or android.view.Gravity.END,
-            ))
+                android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL,
+            ).apply { bottomMargin = (48 * resources.displayMetrics.density).toInt() })
         }
         closeFull = close
         val full = Button(this).apply {
