@@ -25,6 +25,8 @@ class Pretend(private val context: Context, private val said: (String) -> Unit) 
     private var gone = 0.0
     private var clock = 0L
     private var faster = 1
+    private var destination = ""
+    private var arrived = false
     private var steps = 0
 
     var running = false
@@ -34,6 +36,8 @@ class Pretend(private val context: Context, private val said: (String) -> Unit) 
         stop()
         val address = Settings.address(context) ?: return said("Skriv inn adressen til tjenesten først.")
         this.faster = faster
+        destination = to
+        arrived = false
         running = true
         said("Finner veien fra $from til $to …")
         background.execute {
@@ -75,9 +79,15 @@ class Pretend(private val context: Context, private val said: (String) -> Unit) 
             if (++steps % SHOW_EVERY == 0) show(now)
             val km = "%.1f av %.1f km".format(gone.coerceAtMost(trip.metres) / 1000, trip.metres / 1000)
             if (gone >= trip.metres && !teller.busy) {
-                running = false
-                said("Prøveturen er ferdig: $km.")
-                return
+                // Roy, 2026-10-10: say so on reaching the destination he typed.
+                if (!arrived) {
+                    arrived = true
+                    teller.say("Du er fremme i $destination.")
+                } else {
+                    running = false
+                    said("Prøveturen er ferdig: $km. Du er fremme i $destination.")
+                    return
+                }
             }
             said("Prøvetur, ${faster}× fart: $km" + if (teller.busy) ", forteller." else ".")
             ticking.postDelayed(this, STEP_MS)

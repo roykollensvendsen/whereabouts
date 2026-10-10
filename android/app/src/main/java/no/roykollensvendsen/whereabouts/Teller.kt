@@ -79,6 +79,12 @@ class Teller(
         next()
     }
 
+    /** Say something that is not a place, such as arriving at the destination of a pretend drive. */
+    fun say(text: String) {
+        waiting.addLast(Place(id = SAID, name = "", latitude = 0.0, longitude = 0.0, radiusM = 0.0, said = text))
+        next()
+    }
+
     private fun next() {
         if (speaking || !ready || waiting.isEmpty()) return
         // A call holds the sound, the voice's included: wait for it to end.
@@ -88,7 +94,7 @@ class Teller(
         speaking = true
         speech.speak(place.said, TextToSpeech.QUEUE_ADD, null, "place-${place.id}")
         // The map points at the place while it is told, from where it was told.
-        lastHeard?.let { from -> show("{\"id\":${place.id},\"from_latitude\":${from.latitude},\"from_longitude\":${from.longitude}}") }
+        if (place.id != SAID) lastHeard?.let { from -> show("{\"id\":${place.id},\"from_latitude\":${from.latitude},\"from_longitude\":${from.longitude}}") }
     }
 
     private fun finished() {
@@ -158,5 +164,8 @@ class Teller(
 
     companion object {
         private const val TAG = "Whereabouts"
+
+        /** The id of something said that is not a place, so it is never pointed at on the map. */
+        private const val SAID = -1L
     }
 }
