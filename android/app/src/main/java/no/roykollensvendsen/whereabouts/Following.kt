@@ -44,11 +44,26 @@ class Following : Service(), LocationListener {
         // Asked every two seconds; most are dropped by Change before they are sent.
         if (teller == null) teller = Teller(this, sender)
         locations.requestLocationUpdates(LocationManager.GPS_PROVIDER, ASK_EVERY_MS, 0f, this, Looper.getMainLooper())
+        // Roy, 2026-10-10: with the battery low, power saving turned GPS off with the screen off, and
+        // readings stopped for half an hour mid-drive. Masts and wifi still answer then; coarser, but there.
+        if (locations.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+            locations.requestLocationUpdates(
+                LocationManager.NETWORK_PROVIDER, NETWORK_EVERY_MS, 0f, this, Looper.getMainLooper(),
+            )
+        }
         running = true
         return START_STICKY
     }
 
+    /** When the last GPS reading came, so a coarser one is used only while GPS is silent. */
+    private var lastGps = 0L
+
     override fun onLocationChanged(location: Location) {
+        if (location.provider == LocationManager.GPS_PROVIDER) {
+            lastGps = System.currentTimeMillis()
+        } else if (System.currentTimeMillis() - lastGps < GPS_SILENT_MS) {
+            return
+        }
         val now = Reading(
             latitude = location.latitude,
             longitude = location.longitude,
@@ -122,6 +137,10 @@ class Following : Service(), LocationListener {
     companion object {
         private const val TAG = "Whereabouts"
         private const val ASK_EVERY_MS = 2_000L
+
+        /** How often to ask the masts and wifi, and how long GPS must be silent before they are used. */
+        private const val NETWORK_EVERY_MS = 10_000L
+        private const val GPS_SILENT_MS = 20_000L
 
         @Volatile var running = false
             private set
