@@ -146,7 +146,7 @@ def routes(route: Route) -> list[tuple[str, str, Callable[[Request], Awaitable[R
 WHO = "tailscale-user-login"
 
 
-def app(route: Route, allowed: str = "", **kwargs: Any) -> Starlette:  # noqa: ANN401 — passed through to build
+def app(route: Route, allowed: str = "", login_secret: str = "", **kwargs: Any) -> Starlette:  # noqa: ANN401 — passed through to build
     """The web application: MCP at /mcp, and the reading, route and map routes beside it.
 
     `allowed` is the one tailnet login that may reach it from the phone. A
@@ -157,6 +157,10 @@ def app(route: Route, allowed: str = "", **kwargs: Any) -> Starlette:  # noqa: A
     # restart of this service. On 2026-10-10 a restart left it with "Session
     # not found" until it reconnected.
     built = build(route, **kwargs).streamable_http_app(stateless_http=True, json_response=True)
+    # The code for signing Claude on the web in, for the owner's eyes only.
+    from whereabouts.public import login_code_page  # noqa: PLC0415 — public imports this module
+
+    built.add_route("/login-code", login_code_page(login_secret, allowed), methods=["GET"])
     built.add_middleware(OnlyRoy, allowed=allowed)
     return built
 

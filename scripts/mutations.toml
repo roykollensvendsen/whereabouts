@@ -32,3 +32,9 @@ name = "through the tailnet, only Roy's own login is let in"
 file = "src/whereabouts/server.py"
 find = 'if login and login != self\.allowed:'
 replace = 'if False:'
+
+[[rule]]
+name = "the login code is shown only to the owner's own tailnet login"
+file = "src/whereabouts/public.py"
+find = 'if not login or login != allowed\.casefold\(\) or not secret:'
+replace = 'if not secret:'
