@@ -1,0 +1,23 @@
+# whereabouts for Claude on the web: the same tools, behind the owner's sign-in,
+# published by Tailscale Funnel under /whereabouts on the host's port 443.
+# Readings in, the route line and the map stay on the tailnet-only service.
+[Unit]
+Description=whereabouts for Claude on the web, behind sign-in
+After=network-online.target whereabouts.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=%h/whereabouts
+# WHEREABOUTS_LOGIN_SECRET, typed once on the consent page; mode 600, never in the repo.
+EnvironmentFile=%h/.config/whereabouts/env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/whereabouts/.venv/bin/whereabouts serve-public --port 8771 --meta-port 8772 --public-url https://precision7530-arch-roy.taild6993c.ts.net/whereabouts
+Restart=always
+RestartSec=3
+MemoryHigh=200M
+MemoryMax=300M
+
+[Install]
+WantedBy=default.target

@@ -105,6 +105,8 @@ The first time Claude connects, it opens a consent page that asks for the
 login secret. The owner finds it at `/login-code` on the tailnet-only service,
 and only from his own tailnet login. The secret is never printed or sent in a
 chat. Readings in, the route as a line and the map are not published.
+[`deploy/whereabouts-public.service`](deploy/whereabouts-public.service) keeps
+it running, reading the secret from `~/.config/whereabouts/env` (mode 600).
 
 ## From the phone
 
@@ -119,8 +121,9 @@ running.
 ## Status
 
 Readings come in from the phone app, the four tools answer, and the map draws the
-route. Telling Hermes about this server is next, and needs Roy's yes, since it
-changes Hermes's setup.
+route. Hermes uses the tools during a voice call. The tools are published for
+Claude on the web behind the owner's sign-in; connecting it in claude.ai is the
+owner's step.
 
 ## Licence
 
