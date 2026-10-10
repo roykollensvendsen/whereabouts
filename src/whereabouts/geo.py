@@ -29,8 +29,9 @@ NEARBY_METRES = 400
 POLITE = "voice-integration (github.com/roykollensvendsen/voice-integration)"
 #: Below this the direction a phone reports is noise: standing still, it points anywhere.
 MOVING_METRES_PER_SECOND = 1.5
-#: A reading older than this is not "where you are now".
-FRESH_SECONDS = 120.0
+#: A reading older than this is not "where you are now". A phone standing still
+#: gets few new fixes, so this is long; moving, it sends far more often.
+FRESH_SECONDS = 600.0
 #: How wide each side is, either way of its centre line, in degrees.
 SIDE_WIDTH = 60.0
 

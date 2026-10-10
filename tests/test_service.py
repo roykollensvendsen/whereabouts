@@ -118,3 +118,20 @@ def test_through_the_tailnet_only_roy_s_own_login_is_let_in(route):
         local = client.post("/reading", json=SKUGGEVIK)
     assert (mine.status_code, theirs.status_code, local.status_code) == (200, 403, 200)
     assert len(route.since(0)) == 2
+
+
+def test_a_call_needs_no_session_so_a_restart_breaks_nothing(route):
+    """On 2026-10-10 a restart left Hermes with "Session not found" until it reconnected."""
+    route.add(geo.Fix(58.6, 9.0, 90, 16, time.time()))
+    headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+    call_where = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "where_am_i", "arguments": {}},
+    }
+    with TestClient(server.app(route, namer=named), base_url="http://127.0.0.1:8770") as client:
+        # A call with no session id, as a client that was connected before a restart sends.
+        answer = client.post("/mcp", json=call_where, headers=headers)
+    assert answer.status_code == 200
+    assert answer.json()["result"]["structuredContent"]["place"] == "Skuggevik"
