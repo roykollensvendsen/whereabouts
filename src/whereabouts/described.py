@@ -14,6 +14,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from whereabouts import geo
+from whereabouts.store import KEPT_DAYS
 
 if TYPE_CHECKING:
     from whereabouts.store import Route
@@ -56,6 +57,8 @@ class Places:
                 " longitude REAL, radius_m INTEGER, said TEXT, written REAL, kind TEXT DEFAULT 'place')"
             )
             self.db.execute("CREATE INDEX IF NOT EXISTS described_at ON described (latitude, longitude)")
+            # What was told, and when: for going through a drive afterwards. No position is kept here.
+            self.db.execute("CREATE TABLE IF NOT EXISTS told (at REAL, place INTEGER, name TEXT, said TEXT)")
             columns = {row[1] for row in self.db.execute("PRAGMA table_info(described)")}
             if "until" not in columns:  # kept before news could fade
                 self.db.execute("ALTER TABLE described ADD COLUMN until REAL")
@@ -124,6 +127,29 @@ class Places:
             ).fetchone()
         keys = ("id", "name", "latitude", "longitude", "radius_m", "said", "kind")
         return dict(zip(keys, row, strict=True)) if row else None
+
+    def mark_told(self, place_id: int) -> None:
+        """Note that the phone told of this place now; forget notes older than KEPT_DAYS."""
+        place = self.get(place_id)
+        if place is None:
+            return
+        with self.lock, self.db:
+            self.db.execute(
+                "INSERT INTO told VALUES (?, ?, ?, ?)", (time.time(), place_id, place["name"], place["said"])
+            )
+            # RULE: what was told is kept as long as the route, and no longer
+            self.db.execute("DELETE FROM told WHERE at < ?", (time.time() - KEPT_DAYS * 86400,))
+
+    def told_since(self, at: float) -> list[dict[str, Any]]:
+        """What the phone told of since `at`, oldest first: when, which place, and what was said."""
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT at, place, name, said FROM told WHERE at >= ? ORDER BY at", (at,)
+            ).fetchall()
+        return [
+            {"at": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(a)), "id": p, "name": n, "said": s}
+            for a, p, n, s in rows
+        ]
 
     def version(self) -> str:
         """Changes whenever a place is added, changed or forgotten, so the phone knows to fetch again."""

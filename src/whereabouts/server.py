@@ -235,7 +235,15 @@ def news_tools(route: Route, kept: described.Places, nearby: geo.Fetch | None) -
         fresh = [sight for sight in found if sight["name"].casefold() not in told]
         return {"found": fresh, "said": f"{len(fresh)} nye navn langs ruta, av {len(found)}."}
 
-    return [add_local_news, sights_on_route_taken]
+    def told_on_drive(hours: int = 24) -> dict[str, Any]:
+        """What the phone told Roy in the last `hours` (at most 720), in order, to go through a drive.
+
+        Compare it with what he said about the drive, and write what you learn into the stedsguide skill.
+        """
+        told = kept.told_since(time.time() - max(1, min(hours, 720)) * 3600)
+        return {"told": told, "said": f"{len(told)} steder ble fortalt om."}
+
+    return [add_local_news, sights_on_route_taken, told_on_drive]
 
 
 def finding_tools(nearby: geo.Fetch | None, router: Router | None) -> list[Callable[..., Any]]:
@@ -417,6 +425,7 @@ def telling_routes(route: Route) -> list[tuple[str, str, Callable[[Request], Awa
         telling.clear()
         if place is not None:
             telling.update(id=place, start=start, at=time.time())
+            described.Places(route).mark_told(place)
         return JSONResponse({"kept": False})
 
     async def telling_out(_: Request) -> Response:

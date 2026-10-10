@@ -84,6 +84,9 @@ height of the land and the forest, or when Roy is within 200 m of it. Set
 - `add_local_news` for news and for a recurring event that is coming up
   within a month: it fades by itself after `days`.
 - `forget_described` removes a place Roy does not want.
+- `told_on_drive` lists what the phone told, and when, over the last hours.
+  Go through it with what Roy said about the drive, and add what you learn
+  to the lessons below.
 
 When a tool says the map database did not answer, the road is not empty:
 try again later, and say so in your answer rather than reporting none.

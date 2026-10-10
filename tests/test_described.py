@@ -7,7 +7,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from whereabouts import described, geo, server
-from whereabouts.store import Route
+from whereabouts.store import KEPT_DAYS, Route
 
 BRU = {
     "name": "Nidelva bru",
@@ -324,3 +324,17 @@ def test_a_map_database_that_does_not_answer_is_said_never_taken_for_an_empty_ro
     )
     assert answer["found"] == []
     assert answer["said"] == server.BUSY
+
+
+def test_what_was_told_is_kept_as_long_as_the_route_and_no_longer(route):
+    described.Places(route).add([BRU])
+    [bru] = described.Places(route).near(58.45, 8.77, 1_000)
+    with TestClient(server.app(route)) as client:
+        client.post("/telling", json={"id": bru["id"], "from_latitude": 58.44, "from_longitude": 8.76})
+    told = call(server.build(route), "told_on_drive", hours=1)["told"]
+    assert [entry["name"] for entry in told] == ["Nidelva bru"]
+    assert "latitude" not in told[0]  # no position is kept with it
+    with route.lock, route.db:
+        route.db.execute("UPDATE told SET at = at - ?", ((KEPT_DAYS + 1) * 86400,))
+    described.Places(route).mark_told(bru["id"])
+    assert len(described.Places(route).told_since(0)) == 1
