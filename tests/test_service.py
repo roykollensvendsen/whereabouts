@@ -37,6 +37,11 @@ def test_a_reading_sent_in_is_where_hermes_is_told_roy_is(route):
     assert answer["said"].startswith("Du er i Skuggevik, på vei øst i omtrent 60 kilometer i timen.")
     assert answer["direction"] == "øst"
     assert answer["km_h"] == 60
+    # The figures behind the sentence, for Hermes to work with: Roy, 2026-10-10.
+    assert (answer["latitude"], answer["longitude"]) == (58.6, 9.0)
+    assert answer["heading_degrees"] == 90.0
+    assert answer["speed_m_s"] == round(60 / 3.6, 2)
+    assert answer["measured_at"].startswith(time.strftime("%Y-%m-%d"))
 
 
 def test_nothing_known_is_said_plainly(route):
@@ -66,6 +71,7 @@ def test_the_route_taken_is_said_in_kilometres_and_minutes(route):
     route.add(geo.Fix(58.6, 9.1, 90, 16, now))
     answer = call(server.build(route, namer=named), "route_taken", minutes=30)
     assert answer["km"] == 5.8
+    assert (answer["start"]["longitude"], answer["end"]["longitude"]) == (9.0, 9.1)
     assert answer["said"] == "Du har kjørt omtrent 5.8 kilometer på 10 minutter, fra Skuggevik til Skuggevik."
 
 
