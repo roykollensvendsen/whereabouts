@@ -12,6 +12,8 @@ WorkingDirectory=%h/whereabouts
 # The one tailnet login let in from the phone; requests from this machine carry none.
 Environment=WHEREABOUTS_ALLOWED_LOGIN=roykollensvendsen@gmail.com
 Environment=PYTHONUNBUFFERED=1
+# The login secret, shown at /login-code to the owner only. Optional: without it the page says so.
+EnvironmentFile=-%h/.config/whereabouts/env
 ExecStart=%h/whereabouts/.venv/bin/whereabouts serve --port 8770
 Restart=always
 RestartSec=3
