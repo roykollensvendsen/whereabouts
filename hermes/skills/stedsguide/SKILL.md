@@ -66,9 +66,13 @@ it, leave it out. A short true sentence beats a long guess.
 ## Where to place it, and how near counts
 
 Place it where the thing is. For a junction, where the side road meets the
-road Roy drives: `sights_along` gives a road's point nearest the route. Set
-`radius_m` by how far it can be seen: 150 by the road, 300 to 800 for a lake,
-a hill or a mast seen from afar.
+road Roy drives: `sights_along` gives a road's point nearest the route.
+
+The phone tells of a place when it comes into view, worked out from the
+height of the land and the forest, or when Roy is within 200 m of it. Set
+`radius_m` to how far away it is still worth telling when it can be seen:
+150 for a farm by the road, 500 to 1500 for a lake or a village, 2000 to
+3000 for a mountain or a mast.
 
 ## The tools
 
@@ -84,6 +88,13 @@ a hill or a mast seen from afar.
 ## Lessons from Roy
 
 Newest first. Add a dated line here whenever Roy says what he liked or did not.
+
+- 2026-10-10, after the first rewrite: "Navnet står på kartet", "en gård ved
+  veien", "et av flere på strekningen" and "med utsikt mot kysten" say
+  nothing; write only the name and what it is instead. Places are now told
+  as they come into view, so `radius_m` is how far away it is still worth
+  telling when it can be seen: 150 for a farm by the road, 500 to 1500 for a
+  lake or a village, 2000 to 3000 for a mountain or a mast.
 
 - 2026-10-10: Texts were generic and repeated themselves; farms were just
   "a farm". He wants names and where things are, real facts, and fewer, more

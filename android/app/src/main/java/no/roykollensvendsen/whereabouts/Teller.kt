@@ -60,6 +60,8 @@ class Teller(
     }
 
     @Volatile private var lastHeard: Reading? = null
+    @Volatile private var view: List<Ray>? = null
+    @Volatile private var viewedAt: Reading? = null
 
     /** Called on the main thread with every reading, sent or not. */
     fun heard(now: Reading) {
@@ -70,8 +72,14 @@ class Teller(
             val address = Settings.address(context) ?: return
             background.execute { fetch(address, now) }
         }
+        val looked = viewedAt
+        if (now.heading != null && (looked == null || now.at - looked.at >= Telling.REVIEW_MS ||
+                Change.metres(looked, now) >= Telling.REVIEW_METRES)) {
+            viewedAt = now
+            Settings.address(context)?.let { address -> background.execute { look(address, now) } }
+        }
         val told = if (pretend) toldOnThisDrive else Settings.told(context)
-        for (place in Telling.due(places, now, told)) {
+        for (place in Telling.due(places, now, told, view)) {
             if (waiting.none { it.id == place.id }) waiting.addLast(place)
             // Marked as told when it is queued, so the next reading does not queue it again.
             if (pretend) toldOnThisDrive[place.id] = now.at else Settings.markTold(context, place.id, now.at)
@@ -124,6 +132,31 @@ class Teller(
             } catch (failure: Exception) {
                 Log.w(TAG, "could not show what is told: ${failure.message}")
             }
+        }
+    }
+
+    /** What can be seen ahead from here, shaped by hills and forest, from the service. */
+    private fun look(address: String, from: Reading) {
+        try {
+            val url = URL(
+                address.trimEnd('/') +
+                    "/view?latitude=${from.latitude}&longitude=${from.longitude}&heading=${from.heading}",
+            )
+            val connection = url.openConnection() as HttpURLConnection
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 30_000
+            val body = connection.inputStream.bufferedReader().use { it.readText() }
+            connection.disconnect()
+            val rays = JSONObject(body).getJSONArray("rays")
+            view = (0 until rays.length()).map { i ->
+                val ray = rays.getJSONObject(i)
+                val seen = ray.getJSONArray("seen")
+                Ray(ray.getDouble("bearing"), (0 until seen.length()).map { seen.getInt(it) })
+            }
+        } catch (failure: Exception) {
+            // Without a view, places are told by distance alone, as before.
+            Log.w(TAG, "could not look ahead: ${failure.message}")
+            view = null
         }
     }
 

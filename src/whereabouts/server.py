@@ -7,6 +7,7 @@ below when it needs to know where Roy is.
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 import json
 import time
@@ -15,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 from mcp.server import MCPServer
 from starlette.responses import HTMLResponse, JSONResponse, Response
 
-from whereabouts import described, geo, places
+from whereabouts import described, geo, places, view
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -52,20 +53,21 @@ PRETEND_FRESH_SECONDS = 15
 LONGEST_ROUTE_MINUTES = 30 * 24 * 60
 
 
-def build(
+def build(  # noqa: PLR0913 — each keyword is an outside service a test stands in for
     route: Route,
     *,
     nearby: geo.Fetch | None = None,
     namer: places.Namer | None = None,
     router: Router | None = None,
     finder: Callable[[str], tuple[float, float] | None] | None = None,
+    ground: view.Ground | None = None,
 ) -> MCPServer:
     """The MCP server and its routes, over one route store."""
     mcp = MCPServer("whereabouts", instructions=INSTRUCTIONS)
     name = namer or places.Names()
     for tool in tools(route, name, nearby, router):
         mcp.tool()(tool)
-    for path, method, handler in routes(route, router, finder):
+    for path, method, handler in routes(route, router, finder, ground):
         mcp.custom_route(path, methods=[method])(handler)
     return mcp
 
@@ -283,6 +285,7 @@ def routes(
     route: Route,
     router: Router | None = None,
     finder: Callable[[str], tuple[float, float] | None] | None = None,
+    ground: view.Ground | None = None,
 ) -> list[tuple[str, str, Callable[[Request], Awaitable[Response]]]]:
     """The plain web routes: readings in, and the route out as a line and a map."""
 
@@ -322,6 +325,7 @@ def routes(
         ("/reading", "POST", reading),
         *pretend_routes(router, finder),
         *telling_routes(route),
+        *view_routes(route, ground),
         ("/route.geojson", "GET", route_json),
         ("/map", "GET", route_map),
         ("/described", "GET", described_json),
@@ -368,6 +372,26 @@ def pretend_routes(
         ("/pretend", "POST", pretend_in),
         ("/pretend.json", "GET", pretend_out),
     ]
+
+
+def view_routes(
+    route: Route, ground: view.Ground | None
+) -> list[tuple[str, str, Callable[[Request], Awaitable[Response]]]]:
+    """What can be seen from a point, heading one way: for the phone to tell by, and the map to draw."""
+    heights = view.Heights(route, ground)
+
+    async def seen(request: Request) -> Response:
+        """The view from `latitude`, `longitude` heading `heading`: each ray, and its outline."""
+        try:
+            latitude = float(request.query_params["latitude"])
+            longitude = float(request.query_params["longitude"])
+            heading = float(request.query_params["heading"])
+        except (KeyError, ValueError):
+            return JSONResponse({"error": "ask with latitude, longitude and heading"}, 400)
+        rays = await asyncio.to_thread(view.view, heights, latitude, longitude, heading)
+        return JSONResponse({"rays": rays, "outline": view.outline(latitude, longitude, rays)})
+
+    return [("/view", "GET", seen)]
 
 
 def telling_routes(route: Route) -> list[tuple[str, str, Callable[[Request], Awaitable[Response]]]]:
@@ -476,6 +500,7 @@ MAP = """<!doctype html>
     drawn?.remove(); here?.remove();
     drawn = L.polyline(points, { weight: 5 }).addTo(map);
     here = L.circleMarker(points.at(-1), { radius: 8 }).bindTooltip("Der du er").addTo(map);
+    if (points.length > 1) look("real", points.at(-2), points.at(-1), "#3388ff");
     if (!draw.fitted) { map.fitBounds(drawn.getBounds(), { maxZoom: 16 }); draw.fitted = true; }
   }
 
@@ -484,10 +509,31 @@ MAP = """<!doctype html>
   async function follow() {
     const now = await fetch("pretend.json").then((r) => r.json()).catch(() => ({ active: false }));
     pretend?.remove(); pretend = null;
-    if (!now.active) return;
+    if (!now.active) { views.pretend?.shape.remove(); delete views.pretend; follow.last = null; return; }
     pretend = L.circleMarker([now.latitude, now.longitude], { radius: 9, color: ORANGE, fillOpacity: 0.8 })
       .bindTooltip("Prøvetur").addTo(map);
+    if (follow.last) look("pretend", follow.last, [now.latitude, now.longitude], ORANGE);
+    follow.last = [now.latitude, now.longitude];
     if (!telling.id) map.panTo([now.latitude, now.longitude]);
+  }
+
+  // What can be seen ahead, shaped by hills and forest: half a circle in front of where it heads.
+  const views = {};
+  async function look(who, before, after, colour) {
+    // Standing still, the way it heads is only noise: no view then.
+    if (map.distance(before, after) < 15) { views[who]?.shape.remove(); delete views[who]; return; }
+    const old = views[who];
+    if (old && map.distance(old.at, after) < 100 && Date.now() - old.when < 10_000) return;
+    const heading = (bearing(before, after) + 360) % 360;
+    const seen = await fetch(`view?latitude=${after[0]}&longitude=${after[1]}&heading=${heading}`)
+      .then((r) => r.json()).catch(() => null);
+    if (!seen?.outline) return;
+    views[who]?.shape.remove();
+    views[who] = {
+      at: after, when: Date.now(),
+      shape: L.polygon(seen.outline, { color: colour, weight: 1, fillOpacity: 0.12 })
+        .bindTooltip("Synsfelt").addTo(map),
+    };
   }
 
   // Every place described near what the map shows: small purple dots, named.
@@ -542,7 +588,8 @@ MAP = """<!doctype html>
     innerHTML: '<span style="color:#3388ff">●</span> Der du er &nbsp; '
       + `<span style="color:${ORANGE}">●</span> Prøvetur<br>`
       + `<span style="color:${PURPLE}">●</span> Beskrevet &nbsp; `
-      + `<span style="color:${RED}">●</span> Fortelles nå`,
+      + `<span style="color:${RED}">●</span> Fortelles nå<br>`
+      + '<span style="color:#3388ff">▲</span> Synsfelt',
     style: "background:#fff;padding:4px 8px;border-radius:4px;font:14px system-ui",
   });
   legend.addTo(map);

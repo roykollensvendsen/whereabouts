@@ -11,6 +11,9 @@ data class Place(
     val kind: String = "place",
 )
 
+/** One line of sight across the view ahead: which way it looks, and at which distances it sees ground. */
+data class Ray(val bearing: Double, val seen: List<Int>)
+
 /**
  * When to tell of a place. Roy, 2026-10-10: Hermes writes about places, they are
  * kept, and the phone tells of each as he passes, every time he passes. A place
@@ -27,12 +30,32 @@ object Telling {
     const val REFETCH_METRES = 10_000.0
 
     /** Places due now, nearest first. */
-    fun due(places: List<Place>, now: Reading, toldAt: Map<Long, Long>): List<Place> =
+    fun due(places: List<Place>, now: Reading, toldAt: Map<Long, Long>, view: List<Ray>? = null): List<Place> =
         places
             .map { it to Change.metres(now, at(it)) }
-            .filter { (place, metres) -> metres <= reach(place, now) && !toldRecently(place, now, toldAt) }
+            .filter { (place, metres) -> told(place, now, metres, view) && !toldRecently(place, now, toldAt) }
             .sortedBy { it.second }
             .map { it.first }
+
+    /**
+     * Roy, 2026-10-10: tell of things mainly as they come into view. With a
+     * view, a place within its reach is told when it can be seen, or when Roy
+     * is close by it; without one, as soon as it is within reach.
+     */
+    private fun told(place: Place, now: Reading, metres: Double, view: List<Ray>?): Boolean {
+        if (metres > reach(place, now)) return false
+        if (view.isNullOrEmpty()) return true
+        return metres <= CLOSE_METRES || inView(place, now, view)
+    }
+
+    /** Whether the place lies in the view ahead: on the ray nearest its bearing, at a distance that ray sees. */
+    fun inView(place: Place, now: Reading, view: List<Ray>): Boolean {
+        val bearing = Trip.heading(now.latitude, now.longitude, place.latitude, place.longitude)
+        val ray = view.minByOrNull { kotlin.math.abs(((it.bearing - bearing + 540.0) % 360.0) - 180.0) } ?: return false
+        if (kotlin.math.abs(((ray.bearing - bearing + 540.0) % 360.0) - 180.0) > RAY_SLACK) return false
+        val metres = Change.metres(now, at(place))
+        return ray.seen.any { kotlin.math.abs(it - metres) <= SAMPLE_SLACK }
+    }
 
     /** How close counts for this place at this speed. */
     fun reach(place: Place, now: Reading): Double = place.radiusM + (now.speed ?: 0.0) * LEAD_SECONDS
@@ -84,6 +107,17 @@ object Telling {
         else "%.1f kilometer".format(java.util.Locale.forLanguageTag("nb-NO"), metres / 1000)
 
     private const val HERE_METRES = 60.0
+
+    /** Close enough to tell of whether or not the view shows it: the grid cannot see through a roadside. */
+    const val CLOSE_METRES = 200.0
+
+    /** A ray covers this many degrees either side of it, and a sample this many metres either side. */
+    private const val RAY_SLACK = 6.0
+    private const val SAMPLE_SLACK = 60.0
+
+    /** Fetch the view again after this long, or this far along. */
+    const val REVIEW_MS = 10_000L
+    const val REVIEW_METRES = 150.0
     private const val STILL = 1.5
     private val COMPASS = listOf("nord", "nordøst", "øst", "sørøst", "sør", "sørvest", "vest", "nordvest")
 

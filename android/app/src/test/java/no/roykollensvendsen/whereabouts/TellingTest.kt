@@ -83,4 +83,27 @@ class TellingTest {
         val note = bru.copy(kind = "note", said = "En melding du la igjen her: kjøp ved.")
         assertEquals("En melding du la igjen her: kjøp ved.", Telling.spoken(note, still.copy(speed = 20.0)))
     }
+
+    @Test
+    fun withAViewAPlaceFarOffIsToldOnlyWhenItCanBeSeen() {
+        val lake = merdo.copy(radiusM = 6_000.0) // about 5.5 km north
+        val driving = still.copy(speed = 20.0)
+        val blocked = listOf(Ray(0.0, listOf(100, 200)))
+        assertTrue(Telling.due(listOf(lake), driving, emptyMap(), blocked).isEmpty())
+        val open = listOf(Ray(0.0, listOf(100, 200, 5500)))
+        assertEquals(listOf(lake), Telling.due(listOf(lake), driving, emptyMap(), open))
+    }
+
+    @Test
+    fun closeByAPlaceIsToldEvenIfTheViewDoesNotShowIt() {
+        val blocked = listOf(Ray(0.0, listOf(100)))
+        assertEquals(listOf(bru), Telling.due(listOf(bru), still.copy(speed = 20.0), emptyMap(), blocked))
+    }
+
+    @Test
+    fun aPlaceOutsideTheHalfCircleAheadIsNotInView() {
+        val behind = still.copy(heading = 180.0, speed = 20.0)
+        val view = listOf(Ray(180.0, listOf(100, 200, 5500)), Ray(90.0, listOf(5500)), Ray(270.0, listOf(5500)))
+        assertFalse(Telling.inView(merdo, behind, view))
+    }
 }
