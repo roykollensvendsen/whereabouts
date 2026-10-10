@@ -6,6 +6,7 @@ Roy is became a service of its own.
 
 from __future__ import annotations
 
+import itertools
 import json
 import math
 import re
@@ -71,6 +72,15 @@ _KIND = {
     "hamlet": "grend",
     "village": "bygd",
     "locality": "sted",
+    "town": "by",
+    "isolated_dwelling": "gård",
+    "neighbourhood": "boligfelt",
+    "water": "vann",
+    "lake": "innsjø",
+    "river": "elv",
+    "stream": "bekk",
+    "bridge": "bru",
+    "tunnel": "tunnel",
 }
 
 
@@ -179,13 +189,127 @@ def nearby(fix: Fix, fetch: Fetch | None = None) -> list[dict[str, Any]]:
     return [e for e in found.get("elements", []) if isinstance(e, dict)]
 
 
-def _overpass(query: str) -> dict[str, Any]:
+def sights(
+    latitude: float, longitude: float, metres: float, fetch: Fetch | None = None
+) -> list[dict[str, Any]]:
+    """Named sights around a point, for planning a tour: what, where, and its Wikipedia article."""
+    query = (
+        f"[out:json][timeout:{int(NEARBY_SECONDS)}];"
+        f"nwr(around:{round(metres)},{latitude},{longitude})[name]"
+        '[~"^(tourism|historic|natural|man_made|wikipedia)$"~"."];'
+        "out center 80;"
+    )
+    try:
+        found = (fetch or _overpass)(query)
+    except (OSError, json.JSONDecodeError):
+        return []
+    listed = []
+    for element in found.get("elements", []):
+        centre = _centre(element) if isinstance(element, dict) else None
+        if centre is None:
+            continue
+        tags = element.get("tags", {})
+        listed.append(
+            {
+                "name": tags.get("name", ""),
+                "kind": _kind(tags),
+                "latitude": round(centre[0], 6),
+                "longitude": round(centre[1], 6),
+                "wikipedia": tags.get("wikipedia"),
+            }
+        )
+    return listed
+
+
+#: The public road router, asked for the road between two points.
+ROAD_URL = "https://router.project-osrm.org/route/v1/driving/"
+#: A whole road takes longer to search than one spot; planning is not in a hurry.
+ALONG_SECONDS = 60.0
+#: The roads worth naming: those a car drives through on, not the side streets of a town.
+THROUGH_ROADS = '"^(motorway|trunk|primary|secondary|tertiary|unclassified)$"'
+#: How far from the road, in metres, a thing still counts as along it.
+ALONG_METRES = 400
+#: One point of the road every this many metres is enough to follow it.
+ALONG_STEP_METRES = 800
+
+
+def road_between(start: tuple[float, float], end: tuple[float, float]) -> list[tuple[float, float]]:
+    """The road between two points as latitude and longitude pairs, or none when the router is down."""
+    url = f"{ROAD_URL}{start[1]},{start[0]};{end[1]},{end[0]}?overview=full&geometries=geojson"
+    request = urllib.request.Request(url, headers={"User-Agent": POLITE})  # noqa: S310 — a fixed https address
+    try:
+        with urllib.request.urlopen(request, timeout=NEARBY_SECONDS + 2) as reply:  # noqa: S310 — as above
+            found = json.loads(reply.read() or b"{}")
+        line = found["routes"][0]["geometry"]["coordinates"]
+    except (OSError, json.JSONDecodeError, KeyError, IndexError, TypeError):
+        return []
+    return [(float(lat), float(lon)) for lon, lat in line]
+
+
+def thinned(road: list[tuple[float, float]], step: float = ALONG_STEP_METRES) -> list[tuple[float, float]]:
+    """Every `step` metres of a road, with both its ends."""
+    if len(road) < 2:  # noqa: PLR2004 — a road has two ends
+        return road
+    kept, since = [road[0]], 0.0
+    for before, here in itertools.pairwise(road):
+        since += metres_between(Fix(before[0], before[1], None, None, 0.0), here[0], here[1])
+        if since >= step:
+            kept.append(here)
+            since = 0.0
+    if kept[-1] != road[-1]:
+        kept.append(road[-1])
+    return kept
+
+
+def sights_along(road: list[tuple[float, float]], fetch: Fetch | None = None) -> list[dict[str, Any]]:
+    """What has a name along a road: places, farms, water, bridges and sights, in the order passed."""
+    points = thinned(road)
+    if not points:
+        return []
+    line = ",".join(f"{lat:.5f},{lon:.5f}" for lat, lon in points)
+    query = (
+        f"[out:json][timeout:{int(ALONG_SECONDS)}];"
+        f"(nwr(around:{ALONG_METRES},{line})[name]"
+        '[~"^(place|tourism|historic|natural|water|man_made|wikipedia|bridge)$"~"."];'
+        f"way(around:{ALONG_METRES // 4},{line})[highway~{THROUGH_ROADS}][name];);"
+        "out center 400;"
+    )
+    try:
+        found = fetch(query) if fetch else _overpass(query, ALONG_SECONDS)
+    except (OSError, json.JSONDecodeError):
+        return []
+    listed: dict[str, dict[str, Any]] = {}
+    for element in found.get("elements", []):
+        centre = _centre(element) if isinstance(element, dict) else None
+        if centre is None:
+            continue
+        tags = element.get("tags", {})
+        name = str(tags.get("name", ""))
+        if not name or name in listed:
+            continue
+        nearest = min(range(len(points)), key=lambda i: _apart(points[i], centre))
+        listed[name] = {
+            "name": name,
+            "kind": "vei" if "highway" in tags else _kind(tags),
+            "latitude": round(centre[0], 6),
+            "longitude": round(centre[1], 6),
+            "wikipedia": tags.get("wikipedia"),
+            "order": nearest,
+        }
+    return sorted(listed.values(), key=lambda sight: sight["order"])
+
+
+def _apart(a: tuple[float, float], b: tuple[float, float]) -> float:
+    return (a[0] - b[0]) ** 2 + ((a[1] - b[1]) * 0.5) ** 2
+
+
+def _overpass(query: str, seconds: float = NEARBY_SECONDS) -> dict[str, Any]:
     request = urllib.request.Request(
         NEARBY_URL,
         data=urllib.parse.urlencode({"data": query}).encode(),
         headers={"User-Agent": POLITE},
     )
-    with urllib.request.urlopen(request, timeout=NEARBY_SECONDS + 2) as reply:  # noqa: S310 — as above
+    with urllib.request.urlopen(request, timeout=seconds + 2) as reply:  # noqa: S310 — as above
         found = json.loads(reply.read() or b"{}")
     return found if isinstance(found, dict) else {}
 
@@ -198,7 +322,18 @@ def _centre(element: dict[str, Any]) -> tuple[float, float] | None:
 
 
 def _kind(tags: dict[str, Any]) -> str:
-    for key in ("amenity", "tourism", "historic", "natural", "leisure", "place", "man_made", "building"):
+    for key in (
+        "amenity",
+        "tourism",
+        "historic",
+        "natural",
+        "water",
+        "leisure",
+        "place",
+        "man_made",
+        "building",
+        "bridge",
+    ):
         value = str(tags.get(key, ""))
         if value in _KIND:
             return _KIND[value]

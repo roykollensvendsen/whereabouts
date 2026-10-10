@@ -38,3 +38,27 @@ name = "the login code is shown only to the owner's own tailnet login"
 file = "src/whereabouts/public.py"
 find = 'if not login or login != allowed\.casefold\(\) or not secret:'
 replace = 'if not secret:'
+
+[[rule]]
+name = "one call describes at most MAX_PLACES"
+file = "src/whereabouts/described.py"
+find = 'if len\(places\) > MAX_PLACES:'
+replace = 'if False:'
+
+[[rule]]
+name = "a place's radius is kept within what a car can use"
+file = "src/whereabouts/described.py"
+find = '"radius_m": round\(min\(max\(radius, SMALLEST_RADIUS_M\), LARGEST_RADIUS_M\)\),'
+replace = '"radius_m": round(radius),'
+
+[[rule]]
+name = "a place described again is updated, not added twice"
+file = "src/whereabouts/described.py"
+find = 'if same is not None:'
+replace = 'if False:'
+
+[[rule]]
+name = "a note is never merged with a place or another note"
+file = "src/whereabouts/described.py"
+find = 'if kind == NOTE:'
+replace = 'if False:'
