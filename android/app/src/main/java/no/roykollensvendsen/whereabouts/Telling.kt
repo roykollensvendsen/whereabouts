@@ -48,6 +48,9 @@ object Telling {
         return metres <= CLOSE_METRES || inView(place, now, view)
     }
 
+    /** Whether Roy has left the place well behind: twice its reach away. */
+    fun passed(place: Place, now: Reading): Boolean = Change.metres(now, at(place)) > 2 * reach(place, now)
+
     /** Whether the place lies in the view ahead: on the ray nearest its bearing, at a distance that ray sees. */
     fun inView(place: Place, now: Reading, view: List<Ray>): Boolean {
         val bearing = Trip.heading(now.latitude, now.longitude, place.latitude, place.longitude)

@@ -106,4 +106,11 @@ class TellingTest {
         val view = listOf(Ray(180.0, listOf(100, 200, 5500)), Ray(90.0, listOf(5500)), Ray(270.0, listOf(5500)))
         assertFalse(Telling.inView(merdo, behind, view))
     }
+
+    @Test
+    fun aPlaceLeftWellBehindIsPassed() {
+        assertFalse(Telling.passed(bru, still))
+        val far = still.copy(latitude = 58.46, speed = 0.0) // about 1 km beyond
+        assertTrue(Telling.passed(bru, far))
+    }
 }

@@ -95,9 +95,9 @@ class Teller(
         val told = if (pretend) toldOnThisDrive else Settings.told(context)
         for (place in Telling.due(places, now, told, view)) {
             if (waiting.none { it.id == place.id }) waiting.addLast(place)
-            // Marked as told when it is queued, so the next reading does not queue it again.
-            if (pretend) toldOnThisDrive[place.id] = now.at else Settings.markTold(context, place.id, now.at)
         }
+        // A place left behind while the queue waited, on a call say, is no longer worth telling.
+        waiting.removeAll { it.id != SAID && Telling.passed(it, now) }
         next()
     }
 
@@ -118,6 +118,11 @@ class Teller(
         if (audio.requestAudioFocus(focus) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) return
         val place = waiting.removeFirst()
         speaking = true
+        // Marked as told only when it is actually told, so a telling that never sounded is not lost.
+        if (place.id != SAID) {
+            val at = lastHeard?.at ?: System.currentTimeMillis()
+            if (pretend) toldOnThisDrive[place.id] = at else Settings.markTold(context, place.id, at)
+        }
         val text = if (place.id == SAID) place.said else Telling.spoken(place, lastHeard)
         speech.setAudioAttributes(attributes)
         if (handsfree != null) {
