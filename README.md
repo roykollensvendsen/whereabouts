@@ -74,6 +74,38 @@ lookups or what lies ahead. Its instructions say never to read them aloud.
 | `route_taken` | How far, from where to where, and how long, over the last minutes. |
 | `forget_route` | Wipes the whole route, as "slett ruta" asks. |
 
+## From Claude on the web
+
+`serve-public` runs the same tools for Claude on the web and in the Claude app,
+behind a sign-in that only the owner can complete:
+
+```console
+$ whereabouts serve-public --help
+usage: whereabouts serve-public [-h] [--port PORT] [--meta-port META_PORT]
+                                --public-url PUBLIC_URL [--store STORE]
+
+options:
+  -h, --help            show this help message and exit
+  --port PORT           what port the tools listen on
+  --meta-port META_PORT
+                        what port says where to sign in
+  --public-url PUBLIC_URL
+                        the address Claude reaches, with its path
+  --store STORE         where the route is kept
+```
+
+It is published through Tailscale Funnel under a path, `/whereabouts`, on the
+same host as claude-voice. Funnel strips that path, so three mounts are needed:
+- `/whereabouts` goes to `--port`;
+- `/.well-known/oauth-authorization-server/whereabouts` goes to `--port`, where
+  it arrives as `/`;
+- `/.well-known/oauth-protected-resource/whereabouts` goes to `--meta-port`.
+
+The first time Claude connects, it opens a consent page that asks for the
+login secret. The owner finds it at `/login-code` on the tailnet-only service,
+and only from his own tailnet login. The secret is never printed or sent in a
+chat. Readings in, the route as a line and the map are not published.
+
 ## From the phone
 
 The app in [`android/`](android/README.md) sends readings straight here, only
