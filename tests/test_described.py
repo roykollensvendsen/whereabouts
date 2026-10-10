@@ -245,3 +245,23 @@ def test_only_what_lies_along_the_route_is_kept_from_the_boxes(route):
     # The route itself is never sent: only a box around it.
     assert "around:" not in asked[0]
     assert "bbox:" in asked[0]
+
+
+def test_a_pretend_drive_gets_the_road_between_two_named_places(route):
+    road = [(58.46, 8.77), (58.55, 8.83), (58.62, 8.93)]
+    named_places = {"Arendal": (58.46, 8.77), "Tvedestrand": (58.62, 8.93)}
+    asked = []
+
+    def router(start, end):
+        asked.append((start, end))
+        return road
+
+    application = server.app(route, router=router, finder=named_places.get)
+    with TestClient(application) as client:
+        found = client.get("/road", params={"from": "Arendal", "to": "58.62,8.93"}).json()
+        missing = client.get("/road", params={"from": "Atlantis", "to": "Tvedestrand"})
+    assert found["points"] == [list(point) for point in road]
+    assert asked == [((58.46, 8.77), (58.62, 8.93))]
+    assert missing.status_code == 404
+    # A pretend drive is never kept as part of the route.
+    assert route.latest() is None

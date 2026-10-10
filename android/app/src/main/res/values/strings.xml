@@ -9,4 +9,11 @@
     <string name="following_title">Følger deg</string>
     <string name="following_text">Sender posisjon, retning og fart når de endrer seg.</string>
     <string name="telling">Fortell om steder jeg passerer</string>
+    <string name="pretend_title">Prøvetur: hør hva som fortelles langs veien</string>
+    <string name="pretend_from">Fra, for eksempel Arendal</string>
+    <string name="pretend_to">Til, for eksempel Tvedestrand</string>
+    <string name="pretend_faster">Fart: %1$d×</string>
+    <string name="pretend_start">Start prøvetur</string>
+    <string name="pretend_stop">Stopp prøvetur</string>
+    <string name="pretend_stopped">Prøveturen er stoppet.</string>
 </resources>

@@ -14,6 +14,7 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.view.WindowManager
 import android.widget.TextView
 
 /** The address of the service, "Følg meg", and the map. Nothing else. */
@@ -23,6 +24,8 @@ class MainActivity : Activity() {
     private lateinit var toggle: Button
     private lateinit var status: TextView
     private val ticking = Handler(Looper.getMainLooper())
+    private lateinit var pretend: Pretend
+    private var faster = Trip.FASTER[2]
 
     override fun onCreate(saved: Bundle?) {
         super.onCreate(saved)
@@ -45,6 +48,34 @@ class MainActivity : Activity() {
                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(address.text.toString().trimEnd('/') + "/map")))
             }
         }
+        // A pretend drive, to hear what is told on the way.
+        val pretendSaid = TextView(this)
+        pretend = Pretend(this) { pretendSaid.text = it }
+        val from = EditText(this).apply { hint = getString(R.string.pretend_from) }
+        val to = EditText(this).apply { hint = getString(R.string.pretend_to) }
+        val speed = Button(this).apply {
+            text = getString(R.string.pretend_faster, faster)
+            setOnClickListener {
+                faster = Trip.FASTER[(Trip.FASTER.indexOf(faster) + 1) % Trip.FASTER.size]
+                text = getString(R.string.pretend_faster, faster)
+            }
+        }
+        val play = Button(this).apply {
+            text = getString(R.string.pretend_start)
+            setOnClickListener {
+                save()
+                if (pretend.running) {
+                    pretend.stop()
+                    pretendSaid.text = getString(R.string.pretend_stopped)
+                    text = getString(R.string.pretend_start)
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                } else {
+                    pretend.start(from.text.toString().trim(), to.text.toString().trim(), faster)
+                    text = getString(R.string.pretend_stop)
+                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+            }
+        }
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad * 2, pad, pad)
@@ -53,6 +84,15 @@ class MainActivity : Activity() {
             addView(telling)
             addView(map)
             addView(status)
+            addView(TextView(this@MainActivity).apply {
+                text = getString(R.string.pretend_title)
+                setPadding(0, pad * 2, 0, 0)
+            })
+            addView(from)
+            addView(to)
+            addView(speed)
+            addView(play)
+            addView(pretendSaid)
         })
         ask()
         draw()
@@ -66,6 +106,11 @@ class MainActivity : Activity() {
                 ticking.postDelayed(this, 5_000)
             }
         })
+    }
+
+    override fun onDestroy() {
+        pretend.stop()
+        super.onDestroy()
     }
 
     override fun onPause() {

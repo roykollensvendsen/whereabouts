@@ -52,13 +52,14 @@ def build(
     nearby: geo.Fetch | None = None,
     namer: places.Namer | None = None,
     router: Router | None = None,
+    finder: Callable[[str], tuple[float, float] | None] | None = None,
 ) -> MCPServer:
     """The MCP server and its routes, over one route store."""
     mcp = MCPServer("whereabouts", instructions=INSTRUCTIONS)
     name = namer or places.Names()
     for tool in tools(route, name, nearby, router):
         mcp.tool()(tool)
-    for path, method, handler in routes(route):
+    for path, method, handler in routes(route, router, finder):
         mcp.custom_route(path, methods=[method])(handler)
     return mcp
 
@@ -272,7 +273,11 @@ def numbers(fix: geo.Fix) -> dict[str, Any]:
     }
 
 
-def routes(route: Route) -> list[tuple[str, str, Callable[[Request], Awaitable[Response]]]]:
+def routes(
+    route: Route,
+    router: Router | None = None,
+    finder: Callable[[str], tuple[float, float] | None] | None = None,
+) -> list[tuple[str, str, Callable[[Request], Awaitable[Response]]]]:
     """The plain web routes: readings in, and the route out as a line and a map."""
 
     async def reading(request: Request) -> Response:
@@ -307,8 +312,18 @@ def routes(route: Route) -> list[tuple[str, str, Callable[[Request], Awaitable[R
         kept = described.Places(route)
         return JSONResponse({"version": kept.version(), "places": kept.near(latitude, longitude, km * 1000)})
 
+    async def road_json(request: Request) -> Response:
+        """The road between two places, for a pretend drive on the phone; nothing is kept."""
+        start = geo.where(request.query_params.get("from", ""), finder)
+        end = geo.where(request.query_params.get("to", ""), finder)
+        if start is None or end is None:
+            return JSONResponse({"error": "fant ikke stedet", "points": []}, 404)
+        road = (router or geo.road_between)(start, end)
+        return JSONResponse({"points": [[round(lat, 6), round(lon, 6)] for lat, lon in road]})
+
     return [
         ("/reading", "POST", reading),
+        ("/road", "GET", road_json),
         ("/route.geojson", "GET", route_json),
         ("/map", "GET", route_map),
         ("/described", "GET", described_json),

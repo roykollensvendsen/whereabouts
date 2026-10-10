@@ -233,6 +233,35 @@ ALONG_METRES = 400
 ALONG_STEP_METRES = 800
 
 
+#: The public place-name search, asked for where a named place is.
+NAMES_URL = "https://nominatim.openstreetmap.org/search"
+
+
+def place_named(name: str) -> tuple[float, float] | None:
+    """Where a place by this name is, in Norway first, or None when it cannot be found."""
+    query = urllib.parse.urlencode({"q": name, "format": "json", "limit": 1, "countrycodes": "no"})
+    request = urllib.request.Request(f"{NAMES_URL}?{query}", headers={"User-Agent": POLITE})  # noqa: S310 — fixed https
+    try:
+        with urllib.request.urlopen(request, timeout=NEARBY_SECONDS + 2) as reply:  # noqa: S310 — as above
+            found = json.loads(reply.read() or b"[]")
+        return float(found[0]["lat"]), float(found[0]["lon"])
+    except (OSError, json.JSONDecodeError, KeyError, IndexError, TypeError, ValueError):
+        return None
+
+
+def where(
+    said: str, finder: Callable[[str], tuple[float, float] | None] | None = None
+) -> tuple[float, float] | None:
+    """A point given as "latitude,longitude", or the place by that name."""
+    parts = said.split(",")
+    if len(parts) == 2:  # noqa: PLR2004 — latitude and longitude
+        try:
+            return float(parts[0]), float(parts[1])
+        except ValueError:
+            pass
+    return (finder or place_named)(said.strip()) if said.strip() else None
+
+
 def road_between(start: tuple[float, float], end: tuple[float, float]) -> list[tuple[float, float]]:
     """The road between two points as latitude and longitude pairs, or none when the router is down."""
     url = f"{ROAD_URL}{start[1]},{start[0]};{end[1]},{end[0]}?overview=full&geometries=geojson"

@@ -19,7 +19,17 @@ import java.util.concurrent.ExecutorService
  * one at a time, dims other sound while it speaks, and waits while a call, such
  * as the voice, holds the sound.
  */
-class Teller(private val context: Context, private val background: ExecutorService) {
+class Teller(
+    private val context: Context,
+    private val background: ExecutorService,
+    /** A pretend drive: told places are remembered only for this drive, and the switch is ignored. */
+    private val pretend: Boolean = false,
+) {
+
+    private val toldOnThisDrive = HashMap<Long, Long>()
+
+    /** Speaking, or with something waiting to be spoken. */
+    val busy: Boolean get() = speaking || waiting.isNotEmpty()
 
     @Volatile private var places: List<Place> = emptyList()
     @Volatile private var fetchedAt: Reading? = null
@@ -51,17 +61,17 @@ class Teller(private val context: Context, private val background: ExecutorServi
 
     /** Called on the main thread with every reading, sent or not. */
     fun heard(now: Reading) {
-        if (!Settings.telling(context)) return
+        if (!pretend && !Settings.telling(context)) return
         if (Telling.refetch(fetchedAt, now)) {
             fetchedAt = now
             val address = Settings.address(context) ?: return
             background.execute { fetch(address, now) }
         }
-        val told = Settings.told(context)
+        val told = if (pretend) toldOnThisDrive else Settings.told(context)
         for (place in Telling.due(places, now, told)) {
             if (waiting.none { it.id == place.id }) waiting.addLast(place)
             // Marked as told when it is queued, so the next reading does not queue it again.
-            Settings.markTold(context, place.id, now.at)
+            if (pretend) toldOnThisDrive[place.id] = now.at else Settings.markTold(context, place.id, now.at)
         }
         next()
     }
