@@ -274,3 +274,20 @@ def test_a_pretend_drive_is_never_kept_in_the_route(route):
         shown = client.get("/pretend.json").json()
     assert shown == {"active": True, "latitude": 58.5, "longitude": 8.8}
     assert route.latest() is None
+
+
+def test_the_map_is_told_which_place_is_being_told_and_from_where(route):
+    described.Places(route).add([BRU])
+    [bru] = described.Places(route).near(58.45, 8.77, 1_000)
+    with TestClient(server.app(route)) as client:
+        assert client.get("/telling.json").json() == {"active": False}
+        client.post("/telling", json={"id": bru["id"], "from_latitude": 58.44, "from_longitude": 8.76})
+        shown = client.get("/telling.json").json()
+        client.post("/telling", json={"id": None})
+        done = client.get("/telling.json").json()
+    assert shown["active"] is True
+    assert shown["name"] == "Nidelva bru"
+    assert (shown["latitude"], shown["longitude"]) == (58.45, 8.77)
+    assert shown["from"] == [58.44, 8.76]
+    assert done == {"active": False}
+    assert route.latest() is None

@@ -42,6 +42,9 @@ INSTRUCTIONS = (
     "to be heard while driving past."
 )
 
+#: A telling longer than this has surely ended, even if the phone never said so.
+TELLING_FRESH_SECONDS = 90
+
 #: A pretend position older than this means the pretend drive has ended.
 PRETEND_FRESH_SECONDS = 15
 
@@ -318,6 +321,7 @@ def routes(
     return [
         ("/reading", "POST", reading),
         *pretend_routes(router, finder),
+        *telling_routes(route),
         ("/route.geojson", "GET", route_json),
         ("/map", "GET", route_map),
         ("/described", "GET", described_json),
@@ -364,6 +368,39 @@ def pretend_routes(
         ("/pretend", "POST", pretend_in),
         ("/pretend.json", "GET", pretend_out),
     ]
+
+
+def telling_routes(route: Route) -> list[tuple[str, str, Callable[[Request], Awaitable[Response]]]]:
+    """What the phone is telling of right now, so the map can point at it."""
+    # Held in memory only: which place, and from where it was told.
+    telling: dict[str, Any] = {}
+
+    async def telling_in(request: Request) -> Response:
+        """The phone began telling of a place (`id`), or finished (`id` null)."""
+        try:
+            body = json.loads(await request.body() or b"{}")
+            place = None if body.get("id") is None else int(body["id"])
+            start = (
+                (float(body["from_latitude"]), float(body["from_longitude"])) if place is not None else None
+            )
+        except (ValueError, TypeError, KeyError, AttributeError):
+            return JSONResponse({"error": "say which place, and from where"}, 400)
+        telling.clear()
+        if place is not None:
+            telling.update(id=place, start=start, at=time.time())
+        return JSONResponse({"kept": False})
+
+    async def telling_out(_: Request) -> Response:
+        """The place being told of now, and where it is told from, for the map."""
+        if not telling or time.time() - telling["at"] > TELLING_FRESH_SECONDS:
+            return JSONResponse({"active": False})
+        place = described.Places(route).get(telling["id"])
+        if place is None:
+            return JSONResponse({"active": False})
+        start = telling["start"]
+        return JSONResponse({"active": True, **place, "from": [start[0], start[1]]})
+
+    return [("/telling", "POST", telling_in), ("/telling.json", "GET", telling_out)]
 
 
 #: The header Tailscale's `serve` adds, naming the tailnet user who asked. It
@@ -416,43 +453,103 @@ MAP = """<!doctype html>
 <title>Ruta</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<style>html, body, #map { height: 100%; margin: 0; }</style>
+<style>
+  html, body, #map { height: 100%; margin: 0; }
+  .arrow { font-size: 28px; color: #c92a2a; line-height: 28px; text-align: center; }
+  .told { font: bold 15px system-ui; }
+</style>
 <div id="map"></div>
 <script>
   const map = L.map("map");
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19, attribution: "&copy; OpenStreetMap",
   }).addTo(map);
+  const PURPLE = "#7048e8", RED = "#c92a2a", ORANGE = "#e8590c";
+
+  // Where Roy really is: the route and a blue dot.
   let drawn = null, here = null;
   async function draw() {
     const minutes = new URLSearchParams(location.search).get("minutes") ?? "1440";
     const route = await fetch(`route.geojson?minutes=${minutes}`).then((r) => r.json());
     const points = route.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
-    if (!points.length) { map.setView([59.9, 10.75], 5); return; }
+    if (!points.length) { if (!draw.fitted) map.setView([58.55, 8.85], 10); draw.fitted = true; return; }
     drawn?.remove(); here?.remove();
     drawn = L.polyline(points, { weight: 5 }).addTo(map);
     here = L.circleMarker(points.at(-1), { radius: 8 }).bindTooltip("Der du er").addTo(map);
     if (!draw.fitted) { map.fitBounds(drawn.getBounds(), { maxZoom: 16 }); draw.fitted = true; }
   }
-  // A pretend drive on the phone shows as an orange dot the map follows; it is never part of the route.
+
+  // A pretend drive on the phone: an orange dot the map follows; never part of the route.
   let pretend = null;
   async function follow() {
     const now = await fetch("pretend.json").then((r) => r.json()).catch(() => ({ active: false }));
     pretend?.remove(); pretend = null;
     if (!now.active) return;
-    pretend = L.circleMarker([now.latitude, now.longitude], { radius: 9, color: "#e8590c", fillOpacity: 0.8 })
+    pretend = L.circleMarker([now.latitude, now.longitude], { radius: 9, color: ORANGE, fillOpacity: 0.8 })
       .bindTooltip("Prøvetur").addTo(map);
-    map.panTo([now.latitude, now.longitude]);
+    if (!telling.id) map.panTo([now.latitude, now.longitude]);
   }
+
+  // Every place described near what the map shows: small purple dots, named.
+  const places = L.layerGroup().addTo(map);
+  async function described() {
+    const centre = map.getCenter(), corner = map.getBounds().getNorthEast();
+    const km = Math.min(100, Math.max(1, centre.distanceTo(corner) / 1000));
+    const found = await fetch(`described?latitude=${centre.lat}&longitude=${centre.lng}&km=${km}`)
+      .then((r) => r.json()).catch(() => ({ places: [] }));
+    places.clearLayers();
+    const named = map.getZoom() >= 14;
+    for (const place of found.places) {
+      L.circleMarker([place.latitude, place.longitude], { radius: 5, color: PURPLE, fillOpacity: 0.7 })
+        .bindTooltip(place.name || "Melding", { permanent: named, direction: "right" })
+        .bindPopup(`<b>${place.name || "Melding"}</b><br>${place.said}`)
+        .addTo(places);
+    }
+  }
+
+  // The place being told of now: red, named, with how near counts, and an arrow from where it is told.
+  const telling = { id: null, layers: L.layerGroup().addTo(map) };
+  function bearing([lat1, lon1], [lat2, lon2]) {
+    const r = Math.PI / 180, y = Math.sin((lon2 - lon1) * r) * Math.cos(lat2 * r);
+    const x = Math.cos(lat1 * r) * Math.sin(lat2 * r)
+      - Math.sin(lat1 * r) * Math.cos(lat2 * r) * Math.cos((lon2 - lon1) * r);
+    return Math.atan2(y, x) / r;
+  }
+  async function told() {
+    const now = await fetch("telling.json").then((r) => r.json()).catch(() => ({ active: false }));
+    if (!now.active) { telling.layers.clearLayers(); telling.id = null; return; }
+    if (now.id === telling.id) return;
+    telling.id = now.id;
+    telling.layers.clearLayers();
+    const at = [now.latitude, now.longitude];
+    L.circle(at, { radius: now.radius_m, color: RED, weight: 1, fillOpacity: 0.08 }).addTo(telling.layers);
+    L.circleMarker(at, { radius: 10, color: RED, fillOpacity: 0.9 })
+      .bindTooltip(now.name || "Melding", { permanent: true, direction: "top", className: "told" })
+      .addTo(telling.layers);
+    L.polyline([now.from, at], { color: RED, weight: 3, dashArray: "8 6" }).addTo(telling.layers);
+    const turn = bearing(now.from, at);
+    // The arrowhead sits just short of the place, pointing at it, so the place itself stays visible.
+    const tip = [now.from[0] + (at[0] - now.from[0]) * 0.85, now.from[1] + (at[1] - now.from[1]) * 0.85];
+    L.marker(tip, { interactive: false, icon: L.divIcon({
+      className: "", iconSize: [28, 28], iconAnchor: [14, 14],
+      html: `<div class="arrow" style="transform: rotate(${turn - 90}deg)">➤</div>`,
+    }) }).addTo(telling.layers);
+    map.fitBounds(L.latLngBounds([now.from, at]).pad(0.4), { maxZoom: 16 });
+  }
+
   const legend = L.control({ position: "bottomleft" });
   legend.onAdd = () => Object.assign(document.createElement("div"), {
     innerHTML: '<span style="color:#3388ff">●</span> Der du er &nbsp; '
-      + '<span style="color:#e8590c">●</span> Prøvetur',
+      + `<span style="color:${ORANGE}">●</span> Prøvetur<br>`
+      + `<span style="color:${PURPLE}">●</span> Beskrevet &nbsp; `
+      + `<span style="color:${RED}">●</span> Fortelles nå`,
     style: "background:#fff;padding:4px 8px;border-radius:4px;font:14px system-ui",
   });
   legend.addTo(map);
-  draw();
+  map.on("moveend", described);
+  draw().then(described);
   setInterval(draw, 10_000);
   setInterval(follow, 2_000);
+  setInterval(told, 1_500);
 </script>
 """

@@ -115,6 +115,16 @@ class Places:
                 found.append((distance, dict(zip(keys, row, strict=True))))
         return [place for _, place in sorted(found, key=lambda pair: pair[0])]
 
+    def get(self, place_id: int) -> dict[str, Any] | None:
+        """One place by its id, or None when it is gone."""
+        with self.lock:
+            row = self.db.execute(
+                "SELECT id, name, latitude, longitude, radius_m, said, kind FROM described WHERE id = ?",
+                (place_id,),
+            ).fetchone()
+        keys = ("id", "name", "latitude", "longitude", "radius_m", "said", "kind")
+        return dict(zip(keys, row, strict=True)) if row else None
+
     def version(self) -> str:
         """Changes whenever a place is added, changed or forgotten, so the phone knows to fetch again."""
         with self.lock:

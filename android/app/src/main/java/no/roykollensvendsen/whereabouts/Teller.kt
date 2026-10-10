@@ -59,8 +59,11 @@ class Teller(
         })
     }
 
+    @Volatile private var lastHeard: Reading? = null
+
     /** Called on the main thread with every reading, sent or not. */
     fun heard(now: Reading) {
+        lastHeard = now
         if (!pretend && !Settings.telling(context)) return
         if (Telling.refetch(fetchedAt, now)) {
             fetchedAt = now
@@ -84,13 +87,36 @@ class Teller(
         val place = waiting.removeFirst()
         speaking = true
         speech.speak(place.said, TextToSpeech.QUEUE_ADD, null, "place-${place.id}")
+        // The map points at the place while it is told, from where it was told.
+        lastHeard?.let { from -> show("{\"id\":${place.id},\"from_latitude\":${from.latitude},\"from_longitude\":${from.longitude}}") }
     }
 
     private fun finished() {
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             speaking = false
-            if (waiting.isEmpty()) audio.abandonAudioFocusRequest(focus)
+            if (waiting.isEmpty()) {
+                audio.abandonAudioFocusRequest(focus)
+                show("{\"id\":null}")
+            }
             next()
+        }
+    }
+
+    private fun show(body: String) {
+        val address = Settings.address(context) ?: return
+        background.execute {
+            try {
+                val connection = URL(address.trimEnd('/') + "/telling").openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.doOutput = true
+                connection.connectTimeout = 5_000
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.outputStream.use { it.write(body.toByteArray()) }
+                connection.responseCode
+                connection.disconnect()
+            } catch (failure: Exception) {
+                Log.w(TAG, "could not show what is told: ${failure.message}")
+            }
         }
     }
 
