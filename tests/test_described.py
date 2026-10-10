@@ -291,3 +291,23 @@ def test_the_map_is_told_which_place_is_being_told_and_from_where(route):
     assert shown["from"] == [58.44, 8.76]
     assert done == {"active": False}
     assert route.latest() is None
+
+
+def test_a_side_road_is_placed_where_it_meets_the_route(route):
+    road = [(58.46, 8.77), (58.50, 8.80), (58.55, 8.83)]
+    side_road = {
+        "type": "way",
+        "tags": {"name": "Fv410", "highway": "secondary"},
+        # Runs off east from the route at its middle point.
+        "geometry": [
+            {"lat": 58.50, "lon": 8.90},
+            {"lat": 58.50, "lon": 8.85},
+            {"lat": 58.5002, "lon": 8.8001},
+        ],
+    }
+    mcp = server.build(route, nearby=lambda _q: {"elements": [side_road]}, router=lambda _a, _b: road)
+    [found] = call(
+        mcp, "sights_along", from_latitude=58.46, from_longitude=8.77, to_latitude=58.55, to_longitude=8.83
+    )["found"]
+    assert (found["latitude"], found["longitude"]) == (58.5002, 8.8001)
+    assert found["kind"] == "vei"

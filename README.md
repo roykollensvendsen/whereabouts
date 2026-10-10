@@ -82,6 +82,11 @@ lookups or what lies ahead. Its instructions say never to read them aloud.
 | `leave_note` | Leaves what Roy says where he is now, read back to him the next time he passes. |
 | `forget_described` | Stops telling of a place, or of a note by a few of its words. |
 
+How Hermes writes about places is in the skill
+[`hermes/skills/stedsguide`](hermes/skills/stedsguide/SKILL.md), linked into
+Hermes's skills folder; it is improved from Roy's feedback and from going
+through his drives afterwards.
+
 What Hermes writes about a place is kept until forgotten, so the phone tells
 of it every time Roy drives past, and there are more such places as time goes
 on. The phone fetches those near Roy from `/described`; why it works this way is

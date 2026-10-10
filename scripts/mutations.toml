@@ -80,3 +80,9 @@ name = "a pretend drive is never kept in the route"
 file = "src/whereabouts/server.py"
 find = 'pretending\.update\(latitude=latitude, longitude=longitude, at=time\.time\(\)\)'
 replace = 'route.add(geo.Fix(latitude, longitude, None, None, time.time())); pretending.update(latitude=latitude, longitude=longitude, at=time.time())'
+
+[[rule]]
+name = "a side road is placed where it meets the route"
+file = "src/whereabouts/geo.py"
+find = 'return min\(vertices, key=lambda v: min\(_apart\(v, p\) for p in points\)\)'
+replace = 'return vertices[0]'

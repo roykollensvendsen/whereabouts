@@ -298,10 +298,12 @@ def sights_along(road: list[tuple[float, float]], fetch: Fetch | None = None) ->
     line = ",".join(f"{lat:.5f},{lon:.5f}" for lat, lon in points)
     query = (
         f"[out:json][timeout:{int(ALONG_SECONDS)}];"
-        f"(nwr(around:{ALONG_METRES},{line})[name]"
+        f"nwr(around:{ALONG_METRES},{line})[name]"
         '[~"^(place|tourism|historic|natural|water|man_made|wikipedia|bridge)$"~"."];'
-        f"way(around:{ALONG_METRES // 4},{line})[highway~{THROUGH_ROADS}][name];);"
         "out center 400;"
+        # Roads with their whole line, so a side road is placed where it meets the route.
+        f"way(around:{ALONG_METRES // 4},{line})[highway~{THROUGH_ROADS}][name];"
+        "out geom 200;"
     )
     try:
         found = fetch(query) if fetch else _overpass(query, ALONG_SECONDS)
@@ -375,7 +377,7 @@ def _in_order(elements: list[Any], points: list[tuple[float, float]]) -> list[di
     """Each named thing once, with what it is and where, in the order the points pass it."""
     listed: dict[str, dict[str, Any]] = {}
     for element in elements:
-        centre = _centre(element) if isinstance(element, dict) else None
+        centre = _meeting(element, points) if isinstance(element, dict) else None
         if centre is None:
             continue
         tags = element.get("tags", {})
@@ -389,9 +391,24 @@ def _in_order(elements: list[Any], points: list[tuple[float, float]]) -> list[di
             "latitude": round(centre[0], 6),
             "longitude": round(centre[1], 6),
             "wikipedia": tags.get("wikipedia"),
+            # A road's number, such as "Fv 410", and anything else the map knows that is worth saying.
+            "ref": tags.get("ref"),
+            "population": tags.get("population"),
+            "height": tags.get("height") or tags.get("ele"),
             "order": nearest,
         }
     return sorted(listed.values(), key=lambda sight: sight["order"])
+
+
+def _meeting(element: dict[str, Any], points: list[tuple[float, float]]) -> tuple[float, float] | None:
+    """Where a thing is: for a road with its line, the point of it nearest the route, where it meets it."""
+    line = element.get("geometry")
+    if isinstance(line, list) and line and points:
+        # RULE: a side road is placed where it meets the route
+        vertices = [(float(v["lat"]), float(v["lon"])) for v in line if "lat" in v and "lon" in v]
+        if vertices:
+            return min(vertices, key=lambda v: min(_apart(v, p) for p in points))
+    return _centre(element)
 
 
 def _apart(a: tuple[float, float], b: tuple[float, float]) -> float:
