@@ -26,3 +26,9 @@ name = "\"slett ruta\" wipes every reading at once"
 file = "src/whereabouts/store.py"
 find = 'gone = self\.db\.execute\("DELETE FROM readings"\)\.rowcount'
 replace = 'gone = 0'
+
+[[rule]]
+name = "through the tailnet, only Roy's own login is let in"
+file = "src/whereabouts/server.py"
+find = 'if login and login != self\.allowed:'
+replace = 'if False:'

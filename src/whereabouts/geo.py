@@ -104,8 +104,19 @@ def fix_from(body: dict[str, Any], now: float | None = None) -> Fix:
         longitude=float(body.get("longitude", 0)),
         heading=number("heading"),
         speed=number("speed"),
-        at=time.time() if now is None else now,
+        at=_when(body.get("at"), time.time() if now is None else now),
     )
+
+
+#: How far a reading's own time may be from the clock before it is not believed.
+TRUSTED_SKEW_SECONDS = 3600.0
+
+
+def _when(said: object, now: float) -> float:
+    """When the phone measured, if it said so believably; when it arrived, otherwise."""
+    if isinstance(said, (int, float)) and not math.isnan(said) and abs(now - said) <= TRUSTED_SKEW_SECONDS:
+        return float(said)
+    return now
 
 
 def metres_between(a: Fix, latitude: float, longitude: float) -> float:

@@ -69,11 +69,21 @@ readable by this user alone.
 | `route_taken` | How far, from where to where, and how long, over the last minutes. |
 | `forget_route` | Wipes the whole route, as "slett ruta" asks. |
 
+## From the phone
+
+The app in [`android/`](android/README.md) sends readings straight here, only
+when something has changed. The service is reached over the tailnet, served by
+`tailscale serve` on HTTPS port 10001. A request that comes through the tailnet
+is let in only when its tailnet login is the one in
+`WHEREABOUTS_ALLOWED_LOGIN`. A request from this machine carries no login, and
+is let in. [`deploy/whereabouts.service`](deploy/whereabouts.service) keeps it
+running.
+
 ## Status
 
-The first version: readings in, the four tools, and the map. The voice bridge
-still follows the position itself during a call. Passing readings here, and
-telling Hermes about this server, come next.
+Readings come in from the phone app, the four tools answer, and the map draws the
+route. Telling Hermes about this server is next, and needs Roy's yes, since it
+changes Hermes's setup.
 
 ## Licence
 

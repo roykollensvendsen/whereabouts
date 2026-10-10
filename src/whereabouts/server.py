@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
     from starlette.applications import Starlette
     from starlette.requests import Request
+    from starlette.types import ASGIApp, Receive, Scope, Send
 
     from whereabouts.store import Route
 
@@ -122,9 +123,41 @@ def routes(route: Route) -> list[tuple[str, str, Callable[[Request], Awaitable[R
     return [("/reading", "POST", reading), ("/route.geojson", "GET", route_json), ("/map", "GET", route_map)]
 
 
-def app(route: Route, **kwargs: Any) -> Starlette:  # noqa: ANN401 — passed through to build
-    """The web application: MCP at /mcp, and the reading, route and map routes beside it."""
-    return build(route, **kwargs).streamable_http_app()
+#: The header Tailscale's `serve` adds, naming the tailnet user who asked. It
+#: strips any copy the caller sent, so it can be trusted when it is there.
+WHO = "tailscale-user-login"
+
+
+def app(route: Route, allowed: str = "", **kwargs: Any) -> Starlette:  # noqa: ANN401 — passed through to build
+    """The web application: MCP at /mcp, and the reading, route and map routes beside it.
+
+    `allowed` is the one tailnet login that may reach it from the phone. A
+    request with no login came from this machine, where only Roy's own programs
+    run, and is let through.
+    """
+    built = build(route, **kwargs).streamable_http_app()
+    built.add_middleware(OnlyRoy, allowed=allowed)
+    return built
+
+
+class OnlyRoy:
+    """Turns away a request that came through the tailnet from anyone but `allowed`."""
+
+    def __init__(self, inner: ASGIApp, allowed: str) -> None:
+        """Wrap `inner`, letting `allowed` through from the tailnet."""
+        self.inner = inner
+        self.allowed = allowed.casefold()
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Answer 403 to a tailnet login that is not Roy's, and pass everything else on."""
+        if scope["type"] == "http":
+            headers = {key.decode().casefold(): value.decode() for key, value in scope["headers"]}
+            login = headers.get(WHO, "").casefold()
+            # RULE: through the tailnet, only Roy's own login is let in
+            if login and login != self.allowed:
+                await JSONResponse({"error": "not yours"}, 403)(scope, receive, send)
+                return
+        await self.inner(scope, receive, send)
 
 
 MAP = """<!doctype html>

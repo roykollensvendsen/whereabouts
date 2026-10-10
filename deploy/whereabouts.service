@@ -1,0 +1,22 @@
+# whereabouts: where Roy is, his route, and what is around him
+# (github.com/roykollensvendsen/whereabouts). Supervised, so a crash restarts it.
+[Unit]
+Description=whereabouts: where Roy is, for Hermes and the voice
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=%h/whereabouts
+# The one tailnet login let in from the phone; requests from this machine carry none.
+Environment=WHEREABOUTS_ALLOWED_LOGIN=roykollensvendsen@gmail.com
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/whereabouts/.venv/bin/whereabouts serve --port 8770
+Restart=always
+RestartSec=3
+MemoryHigh=200M
+MemoryMax=300M
+
+[Install]
+WantedBy=default.target
