@@ -313,7 +313,7 @@ def routes(
             return JSONResponse({"error": "a reading is latitude and longitude, with heading and speed"}, 400)
         route.add(fix)
         # Roy, 2026-10-10: nobody should have to ask him which app he runs or where its sound goes.
-        about = {key: str(body[key])[:80] for key in ("app", "sound", "power") if key in body}
+        about = {key: str(body[key])[:80] for key in ("app", "sound", "power", "gps") if key in body}
         if about:
             route.phone.update(about, at=time.strftime("%H:%M"))
         return JSONResponse({"kept": True})
