@@ -213,7 +213,8 @@ object Settings {
     private const val ADDRESS = "address"
     private const val TELLING = "telling"
     private const val TOLD = "told"
-    private const val HANDSFREE = "handsfree"
+    // A new key, so a choice saved while the call was the default does not carry over.
+    private const val HANDSFREE_AS_CALL = "handsfree_as_call"
 
     fun address(context: Context): String? =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(ADDRESS, null)?.takeIf { it.isNotBlank() }
@@ -222,12 +223,12 @@ object Settings {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(ADDRESS, address).apply()
     }
 
-    /** Whether a telling goes through the car's handsfree as a call; on unless Roy turns it off. */
+    /** Whether a telling goes through the car's handsfree as a call. Roy, 2026-10-10: off; as music instead. */
     fun handsfree(context: Context): Boolean =
-        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean(HANDSFREE, true)
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean(HANDSFREE_AS_CALL, false)
 
     fun useHandsfree(context: Context, on: Boolean) {
-        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(HANDSFREE, on).apply()
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(HANDSFREE_AS_CALL, on).apply()
     }
 
     fun telling(context: Context): Boolean =

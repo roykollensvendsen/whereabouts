@@ -39,9 +39,12 @@ class Teller(
     private var speaking = false
     private var ready = false
     private val audio = context.getSystemService(AudioManager::class.java)
-    /** As a navigation app speaks: to the car's speakers when it plays the phone's sound, else the phone's. */
+    /**
+     * As music plays. Roy, 2026-10-10: the telling goes to the car as ordinary
+     * music does, the way Spotify is heard, not as a call.
+     */
     private val guidance = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+        .setUsage(AudioAttributes.USAGE_MEDIA)
         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
         .build()
 
@@ -229,7 +232,7 @@ class Teller(
     fun route(): String = when {
         handsfree() != null -> "bilens handsfree, som en samtale"
         audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP } ->
-            "bilens lydanlegg"
+            "bilens lydanlegg, som musikk"
         else -> "telefonens høyttaler"
     }
 
