@@ -522,7 +522,9 @@ MAP = """<!doctype html>
     drawn = L.polyline(points, { weight: 5 }).addTo(map);
     here = L.circleMarker(points.at(-1), { radius: 8 }).bindTooltip("Der du er").addTo(map);
     if (points.length > 1) look("real", points.at(-2), points.at(-1), "#3388ff");
-    if (!draw.fitted) { map.fitBounds(drawn.getBounds(), { maxZoom: 16 }); draw.fitted = true; }
+    if (!draw.fitted) { map.setView(points.at(-1), 15); draw.fitted = true; }
+    // Roy, 2026-10-10: keep where he is in the middle, as a navigation app does, until he moves the map.
+    else if (following && !telling.id && !pretend) map.panTo(points.at(-1));
   }
 
   // A pretend drive on the phone: an orange dot the map follows; never part of the route.
@@ -535,7 +537,7 @@ MAP = """<!doctype html>
       .bindTooltip("Prøvetur").addTo(map);
     if (follow.last) look("pretend", follow.last, [now.latitude, now.longitude], ORANGE);
     follow.last = [now.latitude, now.longitude];
-    if (!telling.id) map.panTo([now.latitude, now.longitude]);
+    if (!telling.id && following) map.panTo([now.latitude, now.longitude]);
   }
 
   // What can be seen ahead, shaped by hills and forest: half a circle in front of where it heads.
@@ -603,6 +605,25 @@ MAP = """<!doctype html>
     }) }).addTo(telling.layers);
     map.fitBounds(L.latLngBounds([now.from, at]).pad(0.4), { maxZoom: 16 });
   }
+
+  // Following: on until Roy moves the map himself; the button puts him back in the middle.
+  let following = true;
+  map.on("dragstart", () => { following = false; followButton.style.display = "block"; });
+  const follow_ = L.control({ position: "topright" });
+  const followButton = Object.assign(document.createElement("button"), {
+    textContent: "Følg meg",
+    style: "display:none;padding:8px 12px;font:15px system-ui;border-radius:6px;"
+      + "border:1px solid #888;background:#fff",
+  });
+  followButton.onclick = (event) => {
+    event.stopPropagation();
+    following = true;
+    followButton.style.display = "none";
+    const at = pretend ? pretend.getLatLng() : here?.getLatLng();
+    if (at) map.setView(at, Math.max(map.getZoom(), 14));
+  };
+  follow_.onAdd = () => followButton;
+  follow_.addTo(map);
 
   const legend = L.control({ position: "bottomleft" });
   legend.onAdd = () => Object.assign(document.createElement("div"), {
