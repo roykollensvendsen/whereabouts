@@ -394,6 +394,15 @@ def trip_routes(route: Route) -> list[tuple[str, str, Callable[[Request], Awaita
         geometry = {"type": "LineString", "coordinates": line}
         return JSONResponse({"type": "Feature", "geometry": geometry, "properties": {"readings": len(line)}})
 
+    async def here_json(_: Request) -> Response:
+        """Where Roy is now, the latest reading only: small enough for the map to ask every second."""
+        fix = route.latest()
+        if fix is None:
+            return JSONResponse({"known": False})
+        return JSONResponse(
+            {"known": True, "latitude": fix.latitude, "longitude": fix.longitude, "at": fix.at}
+        )
+
     async def trips_json(_: Request) -> Response:
         """The drives kept, newest first, for the map's list."""
         return JSONResponse({"trips": route.trips()})
@@ -405,6 +414,7 @@ def trip_routes(route: Route) -> list[tuple[str, str, Callable[[Request], Awaita
 
     return [
         ("/route.geojson", "GET", route_json),
+        ("/here.json", "GET", here_json),
         ("/trip", "POST", trip),
         ("/trips.json", "GET", trips_json),
     ]
@@ -742,8 +752,24 @@ MAP = """<!doctype html>
   });
   legend.addTo(map);
   map.on("moveend", described);
+  // Roy, 2026-10-10: the map lagged ten seconds behind the phone. Move the dot every second from the
+  // latest reading alone, and draw the whole route again every ten.
+  let lastAt = 0;
+  async function moveHere() {
+    if (shown || !here || !drawn) return;
+    const now = await fetch("here.json").then((r) => r.json()).catch(() => ({ known: false }));
+    if (!now.known || now.at <= lastAt) return;
+    lastAt = now.at;
+    const at = [now.latitude, now.longitude];
+    const before = here.getLatLng();
+    here.setLatLng(at);
+    drawn.addLatLng(at);
+    if (following && !telling.id && !pretend) map.panTo(at, { animate: true, duration: 0.8 });
+    if (map.distance(before, at) > 15) look("real", [before.lat, before.lng], at, "#3388ff");
+  }
   draw().then(described);
   setInterval(draw, 10_000);
+  setInterval(moveHere, 1_000);
   setInterval(follow, 2_000);
   setInterval(told, 1_500);
 </script>

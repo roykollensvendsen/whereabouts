@@ -186,3 +186,10 @@ def test_old_drives_are_listed_and_drawn_again(route):
         line = client.get("/route.geojson", params={"began": old["began"], "ended": old["ended"]}).json()
     assert line["geometry"]["coordinates"][0] == [8.8, 58.5]
     assert len(line["geometry"]["coordinates"]) == 5
+
+
+def test_the_map_can_ask_for_just_where_roy_is_now(route):
+    route.add(geo.Fix(58.6, 8.9, 0, 20, time.time()))
+    with TestClient(server.app(route, namer=named)) as client:
+        now = client.get("/here.json").json()
+    assert (now["known"], now["latitude"], now["longitude"]) == (True, 58.6, 8.9)
