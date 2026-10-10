@@ -74,6 +74,7 @@ class Following : Service(), LocationListener {
             // Roy, 2026-10-10: the phone says which app it runs and where its sound goes, so nobody asks him.
             append(",\"app\":\"").append(version).append('"')
             teller?.let { append(",\"sound\":\"").append(it.route()).append('"') }
+            append(",\"power\":\"").append(Power.trouble(this@Following) ?: "ok").append('"')
             append('}')
         }
         try {

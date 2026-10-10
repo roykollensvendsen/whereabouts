@@ -24,6 +24,7 @@ class MainActivity : Activity() {
     private lateinit var address: EditText
     private lateinit var toggle: Button
     private lateinit var status: TextView
+    private lateinit var warning: TextView
     private val ticking = Handler(Looper.getMainLooper())
     private lateinit var pretend: Pretend
     private var trial: Teller? = null
@@ -38,6 +39,10 @@ class MainActivity : Activity() {
         }
         toggle = Button(this).apply { setOnClickListener { flip() } }
         status = TextView(this)
+        warning = TextView(this).apply {
+            setTextColor(0xFFC92A2A.toInt())
+            setOnClickListener { Power.openSaverSettings(this@MainActivity) }
+        }
         val telling = CheckBox(this).apply {
             text = getString(R.string.telling)
             isChecked = Settings.telling(this@MainActivity)
@@ -124,6 +129,7 @@ class MainActivity : Activity() {
             addView(overHandsfree)
             addView(trySound)
             addView(status)
+            addView(warning)
             addView(TextView(this@MainActivity).apply {
                 text = getString(R.string.pretend_title)
                 setPadding(0, pad, 0, 0)
@@ -135,6 +141,7 @@ class MainActivity : Activity() {
             addView(mapView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         })
         ask()
+        Power.askToStayAwake(this)
         draw()
     }
 
@@ -167,6 +174,7 @@ class MainActivity : Activity() {
     }
 
     private fun draw() {
+        warning.text = Power.trouble(this)?.let { getString(R.string.power_warning, it) } ?: ""
         toggle.text = getString(if (Following.running) R.string.stop else R.string.follow)
         status.text = when {
             !Following.running -> "Følger deg ikke."

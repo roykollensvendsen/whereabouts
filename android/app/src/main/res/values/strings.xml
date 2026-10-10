@@ -21,4 +21,5 @@
     <string name="sound_test">Dette er en prøve fra Hvor er jeg. Hører du meg i bilen?</string>
     <string name="sound_goes">Opplesningen går til %1$s.</string>
     <string name="over_handsfree">Les opp over handsfree, som en samtale</string>
+    <string name="power_warning">Advarsel: %1$s. Trykk her for innstillingene.</string>
 </resources>
