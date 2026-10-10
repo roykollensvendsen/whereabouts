@@ -153,7 +153,10 @@ def app(route: Route, allowed: str = "", **kwargs: Any) -> Starlette:  # noqa: A
     request with no login came from this machine, where only Roy's own programs
     run, and is let through.
     """
-    built = build(route, **kwargs).streamable_http_app()
+    # Stateless: each call stands alone, so Hermes's connection outlives a
+    # restart of this service. On 2026-10-10 a restart left it with "Session
+    # not found" until it reconnected.
+    built = build(route, **kwargs).streamable_http_app(stateless_http=True, json_response=True)
     built.add_middleware(OnlyRoy, allowed=allowed)
     return built
 
