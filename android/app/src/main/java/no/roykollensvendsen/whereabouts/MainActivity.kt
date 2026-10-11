@@ -25,6 +25,8 @@ class MainActivity : Activity() {
     private lateinit var address: EditText
     private lateinit var toggle: Button
     private lateinit var status: TextView
+    private lateinit var reach: TextView
+    @Volatile private var reachable: Boolean? = null
     private lateinit var warning: TextView
     private val ticking = Handler(Looper.getMainLooper())
     private lateinit var pretend: Pretend
@@ -45,6 +47,7 @@ class MainActivity : Activity() {
         }
         toggle = Button(this).apply { setOnClickListener { flip() } }
         status = TextView(this)
+        reach = TextView(this)
         warning = TextView(this).apply {
             setTextColor(0xFFC92A2A.toInt())
             setOnClickListener { Power.openSaverSettings(this@MainActivity) }
@@ -58,6 +61,17 @@ class MainActivity : Activity() {
         val mapView = WebView(this).apply {
             settings.javaScriptEnabled = true
             visibility = View.GONE
+            // Roy, 2026-10-11: with Tailscale down the map was only black. Say why instead.
+            webViewClient = object : android.webkit.WebViewClient() {
+                override fun onReceivedError(
+                    view: WebView, request: android.webkit.WebResourceRequest, error: android.webkit.WebResourceError,
+                ) {
+                    if (!request.isForMainFrame) return
+                    view.loadDataWithBaseURL(
+                        null, getString(R.string.map_unreachable, error.description), "text/html", "utf-8", null,
+                    )
+                }
+            }
         }
         fun showMap() {
             save()
@@ -180,6 +194,7 @@ class MainActivity : Activity() {
                 insets
             }
             // Roy, 2026-10-10: show which version runs, so nobody has to guess.
+            addView(reach)
             addView(TextView(this@MainActivity).apply {
                 text = getString(R.string.version, packageManager.getPackageInfo(packageName, 0).versionName)
                 alpha = 0.7f
@@ -213,6 +228,7 @@ class MainActivity : Activity() {
         ticking.post(object : Runnable {
             override fun run() {
                 draw()
+                probe()
                 ticking.postDelayed(this, 5_000)
             }
         })
@@ -301,6 +317,37 @@ class MainActivity : Activity() {
             beginTrip()
         }
         ticking.postDelayed({ draw() }, 300)
+    }
+
+    /** Roy, 2026-10-11: show whether the service can be reached, so a Tailscale trouble is seen at once. */
+    private fun probe() {
+        val address = Settings.address(this) ?: return
+        Thread {
+            reachable = runCatching {
+                val connection = java.net.URL(address.trimEnd('/') + "/here.json").openConnection()
+                    as java.net.HttpURLConnection
+                connection.connectTimeout = 4_000
+                connection.readTimeout = 4_000
+                val ok = connection.responseCode == 200
+                connection.disconnect()
+                ok
+            }.getOrDefault(false)
+            ticking.post { showReach() }
+        }.start()
+    }
+
+    private fun showReach() {
+        when (reachable) {
+            true -> {
+                reach.text = getString(R.string.reach_ok)
+                reach.setTextColor(0xFF2B8A3E.toInt())
+            }
+            false -> {
+                reach.text = getString(R.string.reach_none)
+                reach.setTextColor(0xFFC92A2A.toInt())
+            }
+            null -> reach.text = getString(R.string.reach_checking)
+        }
     }
 
     private fun draw() {
