@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+import struct
 import threading
 import urllib.parse
 import urllib.request
@@ -100,6 +101,72 @@ class Heights:
                 ):
                     found[cell] = (z, cover)
         return found
+
+
+#: How far either side of a driven road the phone is given the land, in metres: as far as a view reaches.
+BAND = FARTHEST
+#: One band centre every this many metres along a road.
+BAND_STEP = 500
+
+
+def band_cells(points: list[tuple[float, float]]) -> list[str]:
+    """Every grid cell within BAND of the given road points: the land a view from that road can reach."""
+    cells: set[str] = set()
+    rows = round(BAND / 111_320 / GRID)
+    for latitude, longitude in points:
+        row0, col0 = round(latitude / GRID), round(longitude / (GRID * 2))
+        across = max(1, round(rows * 0.5 / max(math.cos(math.radians(latitude)), 0.1)))
+        for row in range(row0 - rows, row0 + rows + 1):
+            for col in range(col0 - across, col0 + across + 1):
+                if ((row - row0) / rows) ** 2 + ((col - col0) / across) ** 2 <= 1:
+                    cells.add(f"{row}:{col}")
+    return sorted(cells)
+
+
+def fill(heights: Heights, cells: list[str]) -> int:
+    """Ask the height service for every cell not yet kept. Returns how many were asked."""
+    known = heights._known(set(cells))  # noqa: SLF001 — the same store, read in bulk
+    missing = [cell for cell in cells if cell not in known]
+    for start in range(0, len(missing), BATCH * 20):
+        heights.at([_centre(cell) for cell in missing[start : start + BATCH * 20]])
+    return len(missing)
+
+
+def packed(heights: Heights, latitude: float, longitude: float, metres: float) -> bytes:
+    """The kept land around a point, small enough for the phone: a header line, then 11 bytes a cell.
+
+    Each cell is its grid row and column (int32 each), its height in decimetres
+    (int16) and its land cover as an index into the header's codes (uint8).
+    """
+    dlat = metres / 111_320
+    dlon = dlat / max(math.cos(math.radians(latitude)), 0.1)
+    rows = (round((latitude - dlat) / GRID), round((latitude + dlat) / GRID))
+    cols = (round((longitude - dlon) / (GRID * 2)), round((longitude + dlon) / (GRID * 2)))
+    codes = sorted(COVER)
+    index = {name: i for i, name in enumerate(codes)}
+    with heights.lock:
+        found = heights.db.execute("SELECT cell, z, cover FROM heights").fetchall()
+    body = bytearray()
+    count = 0
+    for cell, z, cover in sorted(found, key=lambda row: tuple(int(x) for x in row[0].split(":"))):
+        row, col = (int(x) for x in cell.split(":"))
+        if not (rows[0] <= row <= rows[1] and cols[0] <= col <= cols[1]) or z is None or math.isnan(z):
+            continue
+        body += struct.pack("<iihB", row, col, max(-32768, min(32767, round(z * 10))), index.get(cover, 255))
+        count += 1
+    header = {
+        "grid": GRID,
+        "count": count,
+        "eyes": EYES,
+        "target": TARGET,
+        "open_near": OPEN_NEAR,
+        "half_width": HALF_WIDTH,
+        "ray_step": RAY_STEP,
+        "sample_step": SAMPLE_STEP,
+        "farthest": FARTHEST,
+        "codes": [[name, COVER[name]] for name in codes],
+    }
+    return json.dumps(header).encode() + b"\n" + bytes(body)
 
 
 def view(heights: Heights, latitude: float, longitude: float, heading: float) -> list[dict[str, Any]]:

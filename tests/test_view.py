@@ -1,11 +1,14 @@
 """What can be seen ahead: half a circle, cut short by hills and forest."""
 
+import json
 import math
+import struct
+import time
 
 import pytest
 from starlette.testclient import TestClient
 
-from whereabouts import server, view
+from whereabouts import geo, server, view
 from whereabouts.store import Route
 
 
@@ -87,3 +90,24 @@ def test_the_view_reaches_only_as_far_as_the_ground_is_seen_without_a_break(rout
     ahead = next(ray for ray in rays if ray["bearing"] == 0.0)
     assert ahead["reach"] == 300  # drawn only to the ridge
     assert any(1950 <= metres <= 2050 for metres in ahead["seen"])  # yet the hilltop can still be told of
+
+
+def test_the_land_along_a_driven_road_is_packed_for_the_phone(route):
+    now = time.time() - 600
+    for i in range(3):
+        route.add(geo.Fix(58.50 + i * 0.002, 8.80, 0.0, 20, now + i * 10))
+
+    def ground(points):
+        return [(12.5, "Skog") for _ in points]
+
+    with TestClient(server.app(route, ground=ground)) as client:
+        client.get("/land.bin", params={"latitude": 58.5, "longitude": 8.8, "km": 5})  # starts the filling
+        time.sleep(1.5)
+        body = client.get("/land.bin", params={"latitude": 58.5, "longitude": 8.8, "km": 5}).content
+    header, cells = body.split(b"\n", 1)
+    about = json.loads(header)
+    assert about["count"] == len(cells) // 11
+    assert about["count"] > 1000  # the band around the road, on both sides
+    _row, _col, decimetres, code = struct.unpack("<iihB", cells[:11])
+    assert decimetres == 125
+    assert about["codes"][code][0] == "Skog"

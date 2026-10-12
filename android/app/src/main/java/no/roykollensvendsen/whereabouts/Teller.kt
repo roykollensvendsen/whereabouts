@@ -93,7 +93,11 @@ class Teller(
         if (now.heading != null && (looked == null || now.at - looked.at >= Telling.REVIEW_MS ||
                 Change.metres(looked, now) >= Telling.REVIEW_METRES)) {
             viewedAt = now
-            Settings.address(context)?.let { address -> background.execute { look(address, now) } }
+            background.execute {
+                // Roy, 2026-10-12: worked out on the phone from the land it keeps, with or without network.
+                val local = land?.view(now.latitude, now.longitude, now.heading ?: 0.0)
+                if (local != null) view = local else Settings.address(context)?.let { address -> look(address, now) }
+            }
         }
         val told = if (pretend) toldOnThisDrive else Settings.told(context)
         for (place in Telling.due(places, now, told, view)) {
@@ -197,12 +201,41 @@ class Teller(
         }
     }
 
+    /** The land along Roy's roads, kept on the phone, for working the view out without network. */
+    @Volatile private var land: Land? = null
+    private val landFile = java.io.File(context.filesDir, "land.bin")
+    @Volatile private var landAt: Reading? = null
+
+    private fun fetchLand(address: String, near: Reading) {
+        val before = landAt
+        if (before != null && Change.metres(before, near) < LAND_AGAIN_METRES &&
+            near.at - before.at < LAND_AGAIN_MS
+        ) return
+        try {
+            val url = URL(
+                address.trimEnd('/') + "/land.bin?latitude=${near.latitude}&longitude=${near.longitude}&km=$FETCH_KM",
+            )
+            val connection = url.openConnection() as HttpURLConnection
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 60_000
+            val bytes = connection.inputStream.use { it.readBytes() }
+            connection.disconnect()
+            land = Land.read(bytes)
+            landAt = near
+            runCatching { landFile.writeBytes(bytes) }
+            Log.i(TAG, "land kept: ${land?.size} cells")
+        } catch (failure: Exception) {
+            Log.w(TAG, "could not fetch the land: ${failure.message}")
+        }
+    }
+
     /** Roy, 2026-10-12: keep the places on the phone, so telling goes on without network. */
     private val kept = java.io.File(context.filesDir, "places.json")
 
     init {
         // The places from the last drive, until the network gives fresher ones.
         runCatching { if (kept.exists()) places = parse(kept.readText()) }
+        runCatching { if (landFile.exists()) land = Land.read(landFile.readBytes()) }
     }
 
     private fun fetch(address: String, near: Reading) {
@@ -216,6 +249,7 @@ class Teller(
             val body = connection.inputStream.bufferedReader().use { it.readText() }
             connection.disconnect()
             places = parse(body)
+            fetchLand(address, near)
             runCatching {
                 kept.writeText(body)
                 // What is kept, for the map to show: around where, how far, how many, and when.
@@ -314,6 +348,10 @@ class Teller(
 
         /** How far around Roy the places are fetched, and kept on the phone for a drive without network. */
         private const val FETCH_KM = 60
+
+        /** The land is fetched again only this far from where it last was, or this long after. */
+        private const val LAND_AGAIN_METRES = 20_000.0
+        private const val LAND_AGAIN_MS = 24 * 60 * 60 * 1000L
 
         /** The file that says what is kept on the phone, read by the screen for the map. */
         const val KEPT_ABOUT = "places-about.json"

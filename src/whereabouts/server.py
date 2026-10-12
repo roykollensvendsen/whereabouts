@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 import json
+import threading
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -479,7 +480,45 @@ def view_routes(
         rays = await asyncio.to_thread(view.view, heights, latitude, longitude, heading)
         return JSONResponse({"rays": rays, "outline": view.outline(latitude, longitude, rays)})
 
-    return [("/view", "GET", seen)]
+    def fill_band() -> None:
+        """Fetch the land along every road driven in the last 30 days, so the phone can work views out."""
+        fixes = [
+            fix
+            for fix in route.since(time.time() - 30 * 86400)
+            if (fix.speed or 0.0) >= geo.MOVING_METRES_PER_SECOND
+        ]
+        points: list[tuple[float, float]] = []
+        for fix in fixes:
+            if (
+                not points
+                or geo.metres_between(geo.Fix(*points[-1]), fix.latitude, fix.longitude) >= view.BAND_STEP
+            ):
+                points.append((fix.latitude, fix.longitude))
+        view.fill(heights, view.band_cells(points))
+
+    filling = threading.Lock()
+
+    def fill_quietly() -> None:
+        if filling.acquire(blocking=False):
+            try:
+                fill_band()
+            finally:
+                filling.release()
+
+    async def land(request: Request) -> Response:
+        """The land kept around a point, packed, for the phone to work its own views out offline."""
+        try:
+            latitude = float(request.query_params["latitude"])
+            longitude = float(request.query_params["longitude"])
+            km = min(max(float(request.query_params.get("km", "60")), 1.0), 100.0)
+        except (KeyError, ValueError):
+            return JSONResponse({"error": "ask with latitude, longitude and km"}, 400)
+        # Roy, 2026-10-12: work views out on the phone; the land along his roads is fetched for it.
+        threading.Thread(target=fill_quietly, daemon=True).start()
+        body = await asyncio.to_thread(view.packed, heights, latitude, longitude, km * 1000)
+        return Response(body, media_type="application/octet-stream")
+
+    return [("/view", "GET", seen), ("/land.bin", "GET", land)]
 
 
 def telling_routes(route: Route) -> list[tuple[str, str, Callable[[Request], Awaitable[Response]]]]:
