@@ -12,8 +12,8 @@ android {
         // Android 10: the oldest that gives a foreground service a location type.
         minSdk = 29
         targetSdk = 35
-        versionCode = 24
-        versionName = "0.24"
+        versionCode = 25
+        versionName = "0.25"
     }
 
     compileOptions {

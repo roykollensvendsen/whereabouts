@@ -365,14 +365,15 @@ def sights_on_route(route: list[tuple[float, float]], fetch: Fetch | None = None
     return _in_order(close, points)
 
 
-def _boxes(points: list[tuple[float, float]]) -> list[tuple[float, float, float, float]]:
+def _boxes(points: list[tuple[float, float]], widest: float = 0.0) -> list[tuple[float, float, float, float]]:
     """South, west, north and east of each stretch of the route no wider than BOX_DEGREES."""
     boxes: list[tuple[float, float, float, float]] = []
     stretch: list[tuple[float, float]] = []
     for point in points:
         trial = [*stretch, point]
         lats, lons = [p[0] for p in trial], [p[1] for p in trial]
-        if stretch and (max(lats) - min(lats) > BOX_DEGREES or max(lons) - min(lons) > BOX_DEGREES):
+        limit = widest or BOX_DEGREES
+        if stretch and (max(lats) - min(lats) > limit or max(lons) - min(lons) > limit):
             boxes.append(_box(stretch))
             stretch = [stretch[-1], point]
         else:
@@ -412,6 +413,142 @@ def _in_order(elements: list[Any], points: list[tuple[float, float]]) -> list[di
             "order": nearest,
         }
     return sorted(listed.values(), key=lambda sight: sight["order"])
+
+
+#: The roads whose meetings make a test point: any a car drives on, side streets included.
+TEST_ROADS = (
+    '"^(motorway|trunk|primary|secondary|tertiary|unclassified|motorway_link|trunk_link|primary_link)$"'
+)
+#: Two meetings of roads closer than this are one junction, or a roundabout's own exits.
+SAME_CROSSING_METRES = 60
+#: Junctions are asked for in boxes this small, or the map database takes too long.
+TEST_BOX_DEGREES = 0.04
+#: A test point farther than this from the road driven is not on it.
+TEST_NEAR_METRES = 40
+
+
+def crossings_along(
+    road: list[tuple[float, float]], fetch: Fetch | None = None
+) -> list[dict[str, Any]] | None:
+    """Roundabouts and junctions on a road, in the order passed: for testing how well telling is timed.
+
+    Roy, 2026-10-12: say when we are at a roundabout or a junction, to hear
+    how accurate the triggers are. A junction is where the road meets
+    another road with another name; a roundabout is told once, at its middle.
+    """
+    points = thinned(road, 200)
+    if not points:
+        return []
+    found = _roads_around(points, fetch)
+    if found is None:
+        return None
+    nodes = {e["id"]: (e["lat"], e["lon"]) for e in found if e.get("type") == "node" and "lat" in e}
+    ways = [e for e in found if e.get("type") == "way"]
+    on_road = [Fix(lat, lon, None, None, 0.0) for lat, lon in densified(road, TEST_NEAR_METRES / 2)]
+
+    def near(at: tuple[float, float]) -> bool:
+        return any(metres_between(point, *at) <= TEST_NEAR_METRES for point in on_road)
+
+    crossings = _roundabouts(ways, nodes, near)
+    crossings += _junctions(ways, nodes, near, crossings)
+    return _in_order(
+        [
+            {"type": "node", "lat": c["latitude"], "lon": c["longitude"], "tags": {"name": c["name"]}}
+            for c in crossings
+        ],
+        points,
+    )
+
+
+def _roads_around(points: list[tuple[float, float]], fetch: Fetch | None) -> list[dict[str, Any]] | None:
+    """Every road a car drives on around the points, with its nodes; None when the database never answers."""
+    found: list[dict[str, Any]] = []
+    answered = 0
+    for south, west, north, east in _boxes(points, TEST_BOX_DEGREES):
+        pad = 0.002
+        bbox = f"{south - pad:.4f},{west - pad * 2:.4f},{north + pad:.4f},{east + pad * 2:.4f}"
+        query = (
+            f"[out:json][timeout:{int(ALONG_SECONDS)}][bbox:{bbox}];"
+            f"way[highway~{TEST_ROADS}];"
+            "out body;>;out skel qt;"
+        )
+        answer = _patiently(query, fetch)
+        if answer is not None:
+            found += answer.get("elements", [])
+            answered += 1
+    return found if answered else None
+
+
+def _roundabouts(
+    ways: list[dict[str, Any]],
+    nodes: dict[int, tuple[float, float]],
+    near: Callable[[tuple[float, float]], bool],
+) -> list[dict[str, Any]]:
+    """The middle of each roundabout the road passes through."""
+    found = []
+    for way in ways:
+        if way.get("tags", {}).get("junction") not in ("roundabout", "circular"):
+            continue
+        ring = [nodes[n] for n in way.get("nodes", []) if n in nodes]
+        if ring and any(near(at) for at in ring):
+            middle = (sum(a for a, _ in ring) / len(ring), sum(b for _, b in ring) / len(ring))
+            found.append({"name": "Rundkjøring", "latitude": middle[0], "longitude": middle[1]})
+    return found
+
+
+def _junctions(
+    ways: list[dict[str, Any]],
+    nodes: dict[int, tuple[float, float]],
+    near: Callable[[tuple[float, float]], bool],
+    already: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Each place on the road where it meets a road with another name, once per junction."""
+    names_at: dict[int, set[str]] = {}
+    for way in ways:
+        tags = way.get("tags", {})
+        if tags.get("junction") in ("roundabout", "circular"):
+            continue
+        label = tags.get("ref") or tags.get("name") or "vei uten navn"
+        for n in way.get("nodes", []):
+            names_at.setdefault(n, set()).add(label)
+    found: list[dict[str, Any]] = []
+    for node, names in names_at.items():
+        if len(names) < 2 or node not in nodes or not near(nodes[node]):  # noqa: PLR2004 — two roads meet
+            continue
+        at = nodes[node]
+        if any(
+            metres_between(Fix(c["latitude"], c["longitude"]), *at) < SAME_CROSSING_METRES
+            for c in [*already, *found]
+        ):
+            continue  # the same junction, or a roundabout's own exits
+        found.append(
+            {"name": "Kryss: " + " og ".join(sorted(names)[:3]), "latitude": at[0], "longitude": at[1]}
+        )
+    return found
+
+
+def densified(road: list[tuple[float, float]], step: float) -> list[tuple[float, float]]:
+    """The road with a point at least every `step` metres, filling in long straight stretches."""
+    points: list[tuple[float, float]] = road[:1]
+    for (lat0, lon0), (lat1, lon1) in itertools.pairwise(road):
+        length = metres_between(Fix(lat0, lon0), lat1, lon1)
+        pieces = max(1, math.ceil(length / step))
+        points += [
+            (lat0 + (lat1 - lat0) * i / pieces, lon0 + (lon1 - lon0) * i / pieces)
+            for i in range(1, pieces + 1)
+        ]
+    return points
+
+
+def _patiently(query: str, fetch: Fetch | None, tries: int = 3) -> dict[str, Any] | None:
+    """Ask the map database, trying again after a pause when it is busy; None if it never answers."""
+    for attempt in range(tries):
+        try:
+            return fetch(query) if fetch else _overpass(query, ALONG_SECONDS)
+        except (OSError, json.JSONDecodeError):
+            if attempt + 1 < tries and fetch is None:
+                time.sleep(5 * (attempt + 1))
+    return None
 
 
 def _meeting(element: dict[str, Any], points: list[tuple[float, float]]) -> tuple[float, float] | None:

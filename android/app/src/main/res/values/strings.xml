@@ -32,4 +32,5 @@
     <string name="reach_none">Ingen forbindelse til tjenesten. Sjekk at Tailscale er på.</string>
     <string name="reach_checking">Sjekker forbindelsen …</string>
     <string name="map_unreachable"><![CDATA[<body style="font:18px system-ui;padding:24px;background:white;color:black"><h3>Kartet kom ikke fram</h3><p>Telefonen når ikke tjenesten på maskinen. Sjekk at Tailscale er på og står som tilkoblet, og prøv igjen.</p><p style="color:gray">(%1$s)</p></body>]]></string>
+    <string name="test_points">Testpunkter: kryss og rundkjøringer</string>
 </resources>

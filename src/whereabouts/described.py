@@ -37,6 +37,10 @@ SAME_SPOT_METRES = 25
 PLACE = "place"
 #: What Roy said to leave by the road, for himself the next time he passes.
 NOTE = "note"
+#: A roundabout or junction said as Roy reaches it, to test how accurate the telling is.
+TEST = "test"
+#: How close a test point counts: the width of a junction.
+TEST_RADIUS_M = 30
 #: Fresh local news about a place, told until it fades.
 NEWS = "news"
 #: How long news is told, in days, unless Hermes says otherwise; and the longest.
@@ -127,6 +131,11 @@ class Places:
             ).fetchone()
         keys = ("id", "name", "latitude", "longitude", "radius_m", "said", "kind")
         return dict(zip(keys, row, strict=True)) if row else None
+
+    def forget_kind(self, kind: str) -> int:
+        """Forget every place of one kind, such as the test points, and say how many went."""
+        with self.lock, self.db:
+            return self.db.execute("DELETE FROM described WHERE kind = ?", (kind,)).rowcount
 
     def mark_told(self, place_id: int) -> None:
         """Note that the phone told of this place now; forget notes older than KEPT_DAYS."""

@@ -100,7 +100,8 @@ class Teller(
             }
         }
         val told = if (pretend) toldOnThisDrive else Settings.told(context)
-        for (place in Telling.due(places, now, told, view)) {
+        val tests = Settings.testPoints(context)
+        for (place in Telling.due(places.filter { tests || it.kind != Telling.TEST }, now, told, view)) {
             if (waiting.none { it.id == place.id }) waiting.addLast(place)
         }
         // A place left behind while the queue waited, on a call say, is no longer worth telling.

@@ -204,7 +204,7 @@ def telling_tools(
         described_near,
         leave_note,
         forget_described,
-        *finding_tools(nearby, router),
+        *finding_tools(route, nearby, router),
         *news_tools(route, kept, nearby),
     ]
 
@@ -279,7 +279,7 @@ def news_tools(route: Route, kept: described.Places, nearby: geo.Fetch | None) -
     return [add_local_news, sights_on_route_taken, told_on_drive]
 
 
-def finding_tools(nearby: geo.Fetch | None, router: Router | None) -> list[Callable[..., Any]]:
+def finding_tools(route: Route, nearby: geo.Fetch | None, router: Router | None) -> list[Callable[..., Any]]:
     """Finding what is worth describing, around a point or along a road."""
     router = router or geo.road_between
 
@@ -313,7 +313,37 @@ def finding_tools(nearby: geo.Fetch | None, router: Router | None) -> list[Calla
             "said": f"{len(found)} navn langs veien.",
         }
 
-    return [sights_near, sights_along]
+    def test_points_along(
+        from_latitude: float, from_longitude: float, to_latitude: float, to_longitude: float
+    ) -> dict[str, Any]:
+        """Put a test point at every roundabout and junction on the road between two points.
+
+        Roy, 2026-10-12: the phone says "Rundkjøring" or "Kryss: ..." the moment
+        he is at one, to hear how accurate the telling is. forget_test_points
+        removes them all again.
+        """
+        road = router((from_latitude, from_longitude), (to_latitude, to_longitude))
+        found = geo.crossings_along(road, nearby) if road else []
+        if found is None:
+            return {"added": 0, "said": BUSY}
+        points = [
+            {
+                "name": crossing["name"],
+                "latitude": crossing["latitude"],
+                "longitude": crossing["longitude"],
+                "radius_m": described.TEST_RADIUS_M,
+                "said": crossing["name"] + ".",
+            }
+            for crossing in found
+        ]
+        done = described.Places(route).add(points, kind=described.TEST) if points else {"added": 0}
+        return {**done, "said": f"{len(points)} testpunkter langs veien."}
+
+    def forget_test_points() -> str:
+        """Remove every test point."""
+        return f"Fjernet {described.Places(route).forget_kind(described.TEST)} testpunkter."
+
+    return [sights_near, sights_along, test_points_along, forget_test_points]
 
 
 def numbers(fix: geo.Fix) -> dict[str, Any]:

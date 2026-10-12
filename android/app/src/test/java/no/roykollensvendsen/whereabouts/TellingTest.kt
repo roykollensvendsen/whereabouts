@@ -113,4 +113,19 @@ class TellingTest {
         val far = still.copy(latitude = 58.46, speed = 0.0) // about 1 km beyond
         assertTrue(Telling.passed(bru, far))
     }
+
+    @Test
+    fun aTestPointIsToldOnlyWhenRoyIsAtIt() {
+        val roundabout = Place(9, "Rundkjøring", 58.451, 9.0, 25.0, "Rundkjøring.", kind = Telling.TEST)
+        val driving = still.copy(speed = 22.0)
+        assertTrue(Telling.due(listOf(roundabout), driving.copy(latitude = 58.4505), emptyMap()).isEmpty()) // 55 m short
+        assertEquals(listOf(roundabout), Telling.due(listOf(roundabout), driving.copy(latitude = 58.4509), emptyMap()))
+    }
+
+    @Test
+    fun aTestPointToldLateIsStillToldSoTheLatenessIsHeard() {
+        val roundabout = Place(9, "Rundkjøring", 58.451, 9.0, 25.0, "Rundkjøring.", kind = Telling.TEST)
+        assertFalse(Telling.passed(roundabout, still.copy(latitude = 58.4525))) // 170 m beyond
+        assertTrue(Telling.passed(roundabout, still.copy(latitude = 58.4545)))
+    }
 }

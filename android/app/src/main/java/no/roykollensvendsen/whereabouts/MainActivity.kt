@@ -118,6 +118,11 @@ class MainActivity : Activity() {
                 }
             }
         }
+        val testPoints = CheckBox(this).apply {
+            text = getString(R.string.test_points)
+            isChecked = Settings.testPoints(this@MainActivity)
+            setOnCheckedChangeListener { _, on -> Settings.useTestPoints(this@MainActivity, on) }
+        }
         val overHandsfree = CheckBox(this).apply {
             text = getString(R.string.over_handsfree)
             isChecked = Settings.handsfree(this@MainActivity)
@@ -207,6 +212,7 @@ class MainActivity : Activity() {
             addView(toggle)
             addView(telling)
             addView(overHandsfree)
+            addView(testPoints)
             addView(side(gpsEvery, fallback))
             addView(noteLag)
             addView(trySound)
@@ -454,6 +460,14 @@ object Settings {
     fun setFallbackMs(context: Context, value: Long) = putLong(context, "fallback_ms", value)
     fun noteLagS(context: Context) = long(context, "note_lag_s", 8L)
     fun setNoteLagS(context: Context, value: Long) = putLong(context, "note_lag_s", value)
+
+    /** Roy, 2026-10-12: roundabouts and junctions said as he reaches them, to test the timing. On to begin. */
+    fun testPoints(context: Context): Boolean =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean("test_points", true)
+
+    fun useTestPoints(context: Context, on: Boolean) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean("test_points", on).apply()
+    }
 
     fun telling(context: Context): Boolean =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean(TELLING, true)

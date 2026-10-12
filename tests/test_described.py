@@ -358,3 +358,32 @@ def test_how_far_back_a_note_goes_is_roys_choice_in_the_app(route):
     call(server.build(route), "leave_note", said="Rett her")
     [note] = [p for p in described.Places(route).near(58.51, 8.90, 5_000) if p["kind"] == described.NOTE]
     assert note["latitude"] == 58.52
+
+
+def test_test_points_are_put_at_roundabouts_and_junctions_on_the_road(route):
+    road = [(58.50, 8.80), (58.51, 8.80), (58.52, 8.80)]
+    elements = [
+        {"type": "node", "id": 1, "lat": 58.505, "lon": 8.80},
+        {"type": "node", "id": 2, "lat": 58.505, "lon": 8.81},
+        {"type": "node", "id": 3, "lat": 58.50, "lon": 8.80},
+        {"type": "node", "id": 4, "lat": 58.52, "lon": 8.80},
+        {"type": "node", "id": 9, "lat": 58.505, "lon": 8.90},  # far off the road
+        {"type": "node", "id": 10, "lat": 58.506, "lon": 8.90},
+        {"type": "way", "id": 100, "nodes": [3, 1, 4], "tags": {"highway": "primary", "ref": "Fv410"}},
+        {"type": "way", "id": 101, "nodes": [1, 2], "tags": {"highway": "tertiary", "name": "Nesveien"}},
+        {"type": "way", "id": 102, "nodes": [9, 10], "tags": {"highway": "tertiary", "name": "Langt unna"}},
+    ]
+    mcp = server.build(route, nearby=lambda _q: {"elements": elements}, router=lambda _a, _b: road)
+    answer = call(
+        mcp,
+        "test_points_along",
+        from_latitude=58.50,
+        from_longitude=8.80,
+        to_latitude=58.52,
+        to_longitude=8.80,
+    )
+    assert answer["added"] == 1
+    [test] = [p for p in described.Places(route).near(58.505, 8.80, 500) if p["kind"] == described.TEST]
+    assert test["name"] == "Kryss: Fv410 og Nesveien"
+    assert test["radius_m"] == described.TEST_RADIUS_M
+    assert "1" in call(mcp, "forget_test_points")["result"]

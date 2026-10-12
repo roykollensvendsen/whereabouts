@@ -44,12 +44,13 @@ object Telling {
      */
     private fun told(place: Place, now: Reading, metres: Double, view: List<Ray>?): Boolean {
         if (metres > reach(place, now)) return false
-        if (view.isNullOrEmpty()) return true
+        if (view.isNullOrEmpty() || place.kind == TEST) return true
         return metres <= CLOSE_METRES || inView(place, now, view)
     }
 
-    /** Whether Roy has left the place well behind: twice its reach away. */
-    fun passed(place: Place, now: Reading): Boolean = Change.metres(now, at(place)) > 2 * reach(place, now)
+    /** Whether Roy has left the place well behind: twice its reach away, or for a test point, TEST_LATE. */
+    fun passed(place: Place, now: Reading): Boolean =
+        Change.metres(now, at(place)) > if (place.kind == TEST) TEST_LATE else 2 * reach(place, now)
 
     /** Whether the place lies in the view ahead: on the ray nearest its bearing, at a distance that ray sees. */
     fun inView(place: Place, now: Reading, view: List<Ray>): Boolean {
@@ -60,8 +61,13 @@ object Telling {
         return ray.seen.any { kotlin.math.abs(it - metres) <= SAMPLE_SLACK }
     }
 
-    /** How close counts for this place at this speed. */
-    fun reach(place: Place, now: Reading): Double = place.radiusM + (now.speed ?: 0.0) * LEAD_SECONDS
+    /**
+     * How close counts for this place at this speed. Roy, 2026-10-12: a test point
+     * (a roundabout or a junction) is said when he is at it, with no lead, to hear
+     * how accurate the telling is.
+     */
+    fun reach(place: Place, now: Reading): Double =
+        if (place.kind == TEST) place.radiusM else place.radiusM + (now.speed ?: 0.0) * LEAD_SECONDS
 
     fun toldRecently(place: Place, now: Reading, toldAt: Map<Long, Long>): Boolean {
         val last = toldAt[place.id] ?: return false
@@ -110,6 +116,12 @@ object Telling {
         else "%.1f kilometer".format(java.util.Locale.forLanguageTag("nb-NO"), metres / 1000)
 
     private const val HERE_METRES = 60.0
+
+    /** A test point, for hearing how accurate the telling is. */
+    const val TEST = "test"
+
+    /** A test point told this late, in metres behind, is still told: how late is what is measured. */
+    private const val TEST_LATE = 300.0
 
     /** Close enough to tell of whether or not the view shows it: the grid cannot see through a roadside. */
     const val CLOSE_METRES = 200.0
