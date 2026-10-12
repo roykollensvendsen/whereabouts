@@ -369,7 +369,7 @@ def test_test_points_are_put_at_roundabouts_and_junctions_on_the_road(route):
         {"type": "node", "id": 4, "lat": 58.52, "lon": 8.80},
         {"type": "node", "id": 9, "lat": 58.505, "lon": 8.90},  # far off the road
         {"type": "node", "id": 10, "lat": 58.506, "lon": 8.90},
-        {"type": "way", "id": 100, "nodes": [3, 1, 4], "tags": {"highway": "primary", "ref": "Fv410"}},
+        {"type": "way", "id": 100, "nodes": [3, 1, 4], "tags": {"highway": "primary", "ref": "410"}},
         {"type": "way", "id": 101, "nodes": [1, 2], "tags": {"highway": "tertiary", "name": "Nesveien"}},
         {"type": "way", "id": 102, "nodes": [9, 10], "tags": {"highway": "tertiary", "name": "Langt unna"}},
     ]
@@ -384,6 +384,6 @@ def test_test_points_are_put_at_roundabouts_and_junctions_on_the_road(route):
     )
     assert answer["added"] == 1
     [test] = [p for p in described.Places(route).near(58.505, 8.80, 500) if p["kind"] == described.TEST]
-    assert test["name"] == "Kryss: Fv410 og Nesveien"
+    assert test["name"] == "Kryss: Nesveien og fylkesvei 410"
     assert test["radius_m"] == described.TEST_RADIUS_M
     assert "1" in call(mcp, "forget_test_points")["result"]

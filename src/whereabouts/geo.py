@@ -496,6 +496,14 @@ def _roundabouts(
     return found
 
 
+def _road_said(tags: dict[str, Any]) -> str:
+    """A road as it is said aloud: "fylkesvei 410", "E 18", its name, or "en sidevei"."""
+    ref = str(tags.get("ref") or "").strip()
+    if ref.isdigit():
+        return f"fylkesvei {ref}"
+    return ref or str(tags.get("name") or "").strip() or "en sidevei"
+
+
 def _junctions(
     ways: list[dict[str, Any]],
     nodes: dict[int, tuple[float, float]],
@@ -508,7 +516,7 @@ def _junctions(
         tags = way.get("tags", {})
         if tags.get("junction") in ("roundabout", "circular"):
             continue
-        label = tags.get("ref") or tags.get("name") or "vei uten navn"
+        label = _road_said(tags)
         for n in way.get("nodes", []):
             names_at.setdefault(n, set()).add(label)
     found: list[dict[str, Any]] = []
