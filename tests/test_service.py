@@ -193,3 +193,13 @@ def test_the_map_can_ask_for_just_where_roy_is_now(route):
     with TestClient(server.app(route, namer=named)) as client:
         now = client.get("/here.json").json()
     assert (now["known"], now["latitude"], now["longitude"]) == (True, 58.6, 8.9)
+
+
+def test_a_reading_sent_late_keeps_the_time_it_was_measured(route):
+    measured = time.time() - 5 * 3600  # held back on the phone through five hours without network
+    with TestClient(server.app(route, namer=named)) as client:
+        client.post("/reading", json={**SKUGGEVIK, "at": measured, "late": True})
+        client.post("/reading", json={**SKUGGEVIK, "latitude": 58.7, "at": measured})  # not marked late
+    kept = route.since(0)
+    assert round(kept[0].at) == round(measured)
+    assert kept[-1].at > measured + 4 * 3600  # an unmarked one that old is not believed

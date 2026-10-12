@@ -122,3 +122,9 @@ name = "the view reaches only as far as the ground is seen without a break"
 file = "src/whereabouts/view.py"
 find = 'if metres not in seen:'
 replace = 'if False:'
+
+[[rule]]
+name = "a reading sent late keeps the time it was measured"
+file = "src/whereabouts/geo.py"
+find = 'back = LATE_SECONDS if late else TRUSTED_SKEW_SECONDS'
+replace = 'back = TRUSTED_SKEW_SECONDS'

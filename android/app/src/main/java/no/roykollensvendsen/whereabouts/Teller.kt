@@ -197,34 +197,47 @@ class Teller(
         }
     }
 
+    /** Roy, 2026-10-12: keep the places on the phone, so telling goes on without network. */
+    private val kept = java.io.File(context.filesDir, "places.json")
+
+    init {
+        // The places from the last drive, until the network gives fresher ones.
+        runCatching { if (kept.exists()) places = parse(kept.readText()) }
+    }
+
     private fun fetch(address: String, near: Reading) {
         try {
             val url = URL(
-                address.trimEnd('/') + "/described?latitude=${near.latitude}&longitude=${near.longitude}&km=30",
+                address.trimEnd('/') + "/described?latitude=${near.latitude}&longitude=${near.longitude}&km=$FETCH_KM",
             )
             val connection = url.openConnection() as HttpURLConnection
             connection.connectTimeout = 10_000
-            connection.readTimeout = 10_000
+            connection.readTimeout = 20_000
             val body = connection.inputStream.bufferedReader().use { it.readText() }
             connection.disconnect()
-            val listed = JSONObject(body).getJSONArray("places")
-            places = (0 until listed.length()).map { i ->
-                val one = listed.getJSONObject(i)
-                Place(
-                    id = one.getLong("id"),
-                    name = one.optString("name"),
-                    latitude = one.getDouble("latitude"),
-                    longitude = one.getDouble("longitude"),
-                    radiusM = one.getDouble("radius_m"),
-                    said = one.getString("said"),
-                    kind = one.optString("kind", "place"),
-                )
-            }
+            places = parse(body)
+            runCatching { kept.writeText(body) }
             Log.i(TAG, "places near: ${places.size}")
         } catch (failure: Exception) {
-            // Kept from the last fetch, so a tunnel or a dead zone tells as before.
+            // Kept from the last fetch, or from the phone's own copy, so a dead zone tells as before.
             Log.w(TAG, "could not fetch places: ${failure.message}")
             fetchedAt = null
+        }
+    }
+
+    private fun parse(body: String): List<Place> {
+        val listed = JSONObject(body).getJSONArray("places")
+        return (0 until listed.length()).map { i ->
+            val one = listed.getJSONObject(i)
+            Place(
+                id = one.getLong("id"),
+                name = one.optString("name"),
+                latitude = one.getDouble("latitude"),
+                longitude = one.getDouble("longitude"),
+                radiusM = one.getDouble("radius_m"),
+                said = one.getString("said"),
+                kind = one.optString("kind", "place"),
+            )
         }
     }
 
@@ -291,6 +304,9 @@ class Teller(
 
         /** How long the handsfree line takes to open before words are sent down it. */
         private const val LINE_OPENS_MS = 1_200L
+
+        /** How far around Roy the places are fetched, and kept on the phone for a drive without network. */
+        private const val FETCH_KM = 60
 
         /** The id of something said that is not a place, so it is never pointed at on the map. */
         private const val SAID = -1L

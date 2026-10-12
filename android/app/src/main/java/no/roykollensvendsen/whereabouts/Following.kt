@@ -142,22 +142,57 @@ class Following : Service(), LocationListener {
             append('}')
         }
         try {
-            val connection = URL(address.trimEnd('/') + "/reading").openConnection() as HttpURLConnection
-            connection.requestMethod = "POST"
-            connection.doOutput = true
-            connection.connectTimeout = 10_000
-            connection.readTimeout = 10_000
-            connection.setRequestProperty("Content-Type", "application/json")
-            connection.outputStream.use { it.write(body.toByteArray()) }
-            val status = connection.responseCode
-            connection.disconnect()
+            post(address, body)
             sent = System.currentTimeMillis()
-            Log.i(TAG, "sent a reading: $status")
+            // Back in reach: send what was held back while there was none, oldest first.
+            sendHeldBack(address)
         } catch (failure: Exception) {
-            // A tunnel or a dead zone: the next change, or the heartbeat, tries again.
-            Log.w(TAG, "could not send: ${failure.message}")
-            last = null
+            // Roy, 2026-10-12: without network the reading is kept on the phone and sent later, marked
+            // late so the service keeps the time it was measured, and the route has no hole.
+            Log.w(TAG, "could not send, keeping it: ${failure.message}")
+            holdBack(body)
         }
+    }
+
+    private val heldBack by lazy { java.io.File(filesDir, "held-back.jsonl") }
+
+    private fun post(address: String, body: String) {
+        val connection = URL(address.trimEnd('/') + "/reading").openConnection() as HttpURLConnection
+        connection.requestMethod = "POST"
+        connection.doOutput = true
+        connection.connectTimeout = 10_000
+        connection.readTimeout = 10_000
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.outputStream.use { it.write(body.toByteArray()) }
+        val status = connection.responseCode
+        connection.disconnect()
+        if (status >= 500) throw java.io.IOException("the service answered $status")
+    }
+
+    private fun holdBack(body: String) {
+        runCatching {
+            // At most a day of readings at one a second; beyond that the oldest are let go.
+            if (heldBack.exists() && heldBack.length() > HELD_BACK_BYTES) heldBack.writeText(heldBack.readLines().takeLast(HELD_BACK_LINES).joinToString("\n", postfix = "\n"))
+            heldBack.appendText(body.dropLast(1) + ",\"late\":true}\n")
+        }
+    }
+
+    private fun sendHeldBack(address: String) {
+        if (!heldBack.exists()) return
+        val lines = runCatching { heldBack.readLines() }.getOrDefault(emptyList()).filter { it.isNotBlank() }
+        var done = 0
+        for (line in lines) {
+            try {
+                post(address, line)
+                done++
+            } catch (failure: Exception) {
+                break
+            }
+        }
+        runCatching {
+            if (done >= lines.size) heldBack.delete() else heldBack.writeText(lines.drop(done).joinToString("\n", postfix = "\n"))
+        }
+        if (done > 0) Log.i(TAG, "sent $done held-back readings")
     }
 
     override fun onDestroy() {
@@ -188,6 +223,10 @@ class Following : Service(), LocationListener {
     companion object {
         private const val TAG = "Whereabouts"
         private const val ASK_EVERY_MS = 2_000L
+
+        /** How much is held back on the phone without network: about a day at one reading a second. */
+        private const val HELD_BACK_BYTES = 30_000_000L
+        private const val HELD_BACK_LINES = 86_400
 
         /** How often to ask the masts and wifi, and how long GPS must be silent before they are used. */
         private const val NETWORK_EVERY_MS = 10_000L
