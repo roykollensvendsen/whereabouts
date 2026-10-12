@@ -741,13 +741,32 @@ MAP = """<!doctype html>
   follow_.onAdd = () => followButton;
   follow_.addTo(map);
 
+  // Roy, 2026-10-12: show what the phone keeps for telling without network. The app calls this.
+  let cached = null;
+  const cachedNote = L.control({ position: "topleft" });
+  const cachedText = Object.assign(document.createElement("div"), {
+    style: "display:none;background:#fff;padding:4px 8px;border-radius:6px;font:13px system-ui;color:#2b8a3e",
+  });
+  cachedNote.onAdd = () => cachedText;
+  cachedNote.addTo(map);
+  window.showCached = (latitude, longitude, km, count, at) => {
+    cached?.remove();
+    cached = L.circle([latitude, longitude], {
+      radius: km * 1000, color: "#2b8a3e", weight: 2, dashArray: "6 8", fill: false, interactive: false,
+    }).addTo(map);
+    const when = new Date(at).toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" });
+    cachedText.textContent = `Lagret på telefonen: ${count} steder, hentet kl. ${when}`;
+    cachedText.style.display = "block";
+  };
+
   const legend = L.control({ position: "bottomleft" });
   legend.onAdd = () => Object.assign(document.createElement("div"), {
     innerHTML: '<span style="color:#3388ff">●</span> Der du er &nbsp; '
       + `<span style="color:${ORANGE}">●</span> Prøvetur<br>`
       + `<span style="color:${PURPLE}">●</span> Beskrevet &nbsp; `
       + `<span style="color:${RED}">●</span> Fortelles nå<br>`
-      + '<span style="color:#3388ff">▲</span> Synsfelt',
+      + '<span style="color:#3388ff">▲</span> Synsfelt &nbsp; '
+      + '<span style="color:#2b8a3e">◌</span> Lagret på telefonen',
     style: "background:#fff;padding:4px 8px;border-radius:4px;font:14px system-ui",
   });
   legend.addTo(map);

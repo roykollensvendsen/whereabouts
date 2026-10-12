@@ -216,7 +216,14 @@ class Teller(
             val body = connection.inputStream.bufferedReader().use { it.readText() }
             connection.disconnect()
             places = parse(body)
-            runCatching { kept.writeText(body) }
+            runCatching {
+                kept.writeText(body)
+                // What is kept, for the map to show: around where, how far, how many, and when.
+                java.io.File(context.filesDir, KEPT_ABOUT).writeText(
+                    "{\"latitude\":${near.latitude},\"longitude\":${near.longitude},\"km\":$FETCH_KM," +
+                        "\"count\":${places.size},\"at\":${System.currentTimeMillis()}}",
+                )
+            }
             Log.i(TAG, "places near: ${places.size}")
         } catch (failure: Exception) {
             // Kept from the last fetch, or from the phone's own copy, so a dead zone tells as before.
@@ -307,6 +314,9 @@ class Teller(
 
         /** How far around Roy the places are fetched, and kept on the phone for a drive without network. */
         private const val FETCH_KM = 60
+
+        /** The file that says what is kept on the phone, read by the screen for the map. */
+        const val KEPT_ABOUT = "places-about.json"
 
         /** The id of something said that is not a place, so it is never pointed at on the map. */
         private const val SAID = -1L

@@ -31,6 +31,7 @@ class MainActivity : Activity() {
     private val ticking = Handler(Looper.getMainLooper())
     private lateinit var pretend: Pretend
     private lateinit var mapFrame: android.widget.FrameLayout
+    private lateinit var mapWeb: WebView
     private lateinit var closeFull: Button
     private var fullScreen = false
     private var trial: Teller? = null
@@ -63,6 +64,8 @@ class MainActivity : Activity() {
             visibility = View.GONE
             // Roy, 2026-10-11: with Tailscale down the map was only black. Say why instead.
             webViewClient = object : android.webkit.WebViewClient() {
+                override fun onPageFinished(view: WebView, url: String) = showCached(view)
+
                 override fun onReceivedError(
                     view: WebView, request: android.webkit.WebResourceRequest, error: android.webkit.WebResourceError,
                 ) {
@@ -86,6 +89,7 @@ class MainActivity : Activity() {
             visibility = View.GONE
             setOnClickListener { leaveFullScreen() }
         }
+        mapWeb = mapView
         mapFrame = android.widget.FrameLayout(this).apply {
             addView(mapView)
             // Bottom middle: the map's own buttons sit in the corners, and "Følg meg" top right.
@@ -229,6 +233,7 @@ class MainActivity : Activity() {
             override fun run() {
                 draw()
                 probe()
+                if (mapWeb.visibility == View.VISIBLE) showCached(mapWeb)
                 ticking.postDelayed(this, 5_000)
             }
         })
@@ -317,6 +322,18 @@ class MainActivity : Activity() {
             beginTrip()
         }
         ticking.postDelayed({ draw() }, 300)
+    }
+
+    /** Roy, 2026-10-12: show on the map what the phone keeps for telling without network. */
+    private fun showCached(view: WebView) {
+        val about = java.io.File(filesDir, Teller.KEPT_ABOUT)
+        if (!about.exists()) return
+        val kept = runCatching { org.json.JSONObject(about.readText()) }.getOrNull() ?: return
+        view.evaluateJavascript(
+            "window.showCached && showCached(${kept.getDouble("latitude")}, ${kept.getDouble("longitude")}, " +
+                "${kept.getInt("km")}, ${kept.getInt("count")}, ${kept.getLong("at")})",
+            null,
+        )
     }
 
     /** Roy, 2026-10-11: show whether the service can be reached, so a Tailscale trouble is seen at once. */
