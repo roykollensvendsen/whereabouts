@@ -6,6 +6,7 @@ Roy is became a service of its own.
 
 from __future__ import annotations
 
+import itertools
 import json
 import math
 import re
@@ -71,6 +72,15 @@ _KIND = {
     "hamlet": "grend",
     "village": "bygd",
     "locality": "sted",
+    "town": "by",
+    "isolated_dwelling": "gård",
+    "neighbourhood": "boligfelt",
+    "water": "vann",
+    "lake": "innsjø",
+    "river": "elv",
+    "stream": "bekk",
+    "bridge": "bru",
+    "tunnel": "tunnel",
 }
 
 
@@ -83,6 +93,8 @@ class Fix:
     heading: float | None = None
     speed: float | None = None
     at: float = 0.0
+    #: How far off the phone says the reading may be, in metres; None when it did not say.
+    accuracy: float | None = None
 
     def moving(self) -> bool:
         """Whether the direction means anything: the phone is going somewhere."""
@@ -105,17 +117,28 @@ def fix_from(body: dict[str, Any], now: float | None = None) -> Fix:
         longitude=float(body.get("longitude", 0)),
         heading=number("heading"),
         speed=number("speed"),
-        at=_when(body.get("at"), time.time() if now is None else now),
+        at=_when(body.get("at"), time.time() if now is None else now, late=bool(body.get("late"))),
+        accuracy=number("accuracy"),
     )
 
 
 #: How far a reading's own time may be from the clock before it is not believed.
 TRUSTED_SKEW_SECONDS = 3600.0
+#: How far back a reading held back without network is believed: as long as the route is kept.
+LATE_SECONDS = 30 * 86400.0
 
 
-def _when(said: object, now: float) -> float:
-    """When the phone measured, if it said so believably; when it arrived, otherwise."""
-    if isinstance(said, (int, float)) and not math.isnan(said) and abs(now - said) <= TRUSTED_SKEW_SECONDS:
+def _when(said: object, now: float, *, late: bool = False) -> float:
+    """When the phone measured, if it said so believably; when it arrived, otherwise.
+
+    A reading the phone held back while it had no network says so (`late`),
+    and its own time is believed back as far as the route is kept.
+    """
+    if not isinstance(said, (int, float)) or math.isnan(said):
+        return now
+    # RULE: a reading sent late keeps the time it was measured
+    back = LATE_SECONDS if late else TRUSTED_SKEW_SECONDS
+    if -TRUSTED_SKEW_SECONDS <= now - said <= back:
         return float(said)
     return now
 
@@ -179,15 +202,403 @@ def nearby(fix: Fix, fetch: Fetch | None = None) -> list[dict[str, Any]]:
     return [e for e in found.get("elements", []) if isinstance(e, dict)]
 
 
-def _overpass(query: str) -> dict[str, Any]:
-    request = urllib.request.Request(
-        NEARBY_URL,
-        data=urllib.parse.urlencode({"data": query}).encode(),
-        headers={"User-Agent": POLITE},
+def sights(
+    latitude: float, longitude: float, metres: float, fetch: Fetch | None = None
+) -> list[dict[str, Any]]:
+    """Named sights around a point, for planning a tour: what, where, and its Wikipedia article."""
+    query = (
+        f"[out:json][timeout:{int(NEARBY_SECONDS)}];"
+        f"nwr(around:{round(metres)},{latitude},{longitude})[name]"
+        '[~"^(tourism|historic|natural|man_made|wikipedia)$"~"."];'
+        "out center 80;"
     )
-    with urllib.request.urlopen(request, timeout=NEARBY_SECONDS + 2) as reply:  # noqa: S310 — as above
-        found = json.loads(reply.read() or b"{}")
-    return found if isinstance(found, dict) else {}
+    try:
+        found = (fetch or _overpass)(query)
+    except (OSError, json.JSONDecodeError):
+        return []
+    listed = []
+    for element in found.get("elements", []):
+        centre = _centre(element) if isinstance(element, dict) else None
+        if centre is None:
+            continue
+        tags = element.get("tags", {})
+        listed.append(
+            {
+                "name": tags.get("name", ""),
+                "kind": _kind(tags),
+                "latitude": round(centre[0], 6),
+                "longitude": round(centre[1], 6),
+                "wikipedia": tags.get("wikipedia"),
+            }
+        )
+    return listed
+
+
+#: The public road router, asked for the road between two points.
+ROAD_URL = "https://router.project-osrm.org/route/v1/driving/"
+#: A whole road takes longer to search than one spot; planning is not in a hurry.
+ALONG_SECONDS = 60.0
+#: The roads worth naming: those a car drives through on, not the side streets of a town.
+THROUGH_ROADS = '"^(motorway|trunk|primary|secondary|tertiary|unclassified)$"'
+#: How far from the road, in metres, a thing still counts as along it.
+ALONG_METRES = 400
+#: One point of the road every this many metres is enough to follow it.
+ALONG_STEP_METRES = 800
+
+
+#: The public place-name search, asked for where a named place is.
+NAMES_URL = "https://nominatim.openstreetmap.org/search"
+
+
+def place_named(name: str) -> tuple[float, float] | None:
+    """Where a place by this name is, in Norway first, or None when it cannot be found."""
+    query = urllib.parse.urlencode({"q": name, "format": "json", "limit": 1, "countrycodes": "no"})
+    request = urllib.request.Request(f"{NAMES_URL}?{query}", headers={"User-Agent": POLITE})  # noqa: S310 — fixed https
+    try:
+        with urllib.request.urlopen(request, timeout=NEARBY_SECONDS + 2) as reply:  # noqa: S310 — as above
+            found = json.loads(reply.read() or b"[]")
+        return float(found[0]["lat"]), float(found[0]["lon"])
+    except (OSError, json.JSONDecodeError, KeyError, IndexError, TypeError, ValueError):
+        return None
+
+
+def where(
+    said: str, finder: Callable[[str], tuple[float, float] | None] | None = None
+) -> tuple[float, float] | None:
+    """A point given as "latitude,longitude", or the place by that name."""
+    parts = said.split(",")
+    if len(parts) == 2:  # noqa: PLR2004 — latitude and longitude
+        try:
+            return float(parts[0]), float(parts[1])
+        except ValueError:
+            pass
+    return (finder or place_named)(said.strip()) if said.strip() else None
+
+
+def road_between(start: tuple[float, float], end: tuple[float, float]) -> list[tuple[float, float]]:
+    """The road between two points as latitude and longitude pairs, or none when the router is down."""
+    url = f"{ROAD_URL}{start[1]},{start[0]};{end[1]},{end[0]}?overview=full&geometries=geojson"
+    request = urllib.request.Request(url, headers={"User-Agent": POLITE})  # noqa: S310 — a fixed https address
+    try:
+        with urllib.request.urlopen(request, timeout=NEARBY_SECONDS + 2) as reply:  # noqa: S310 — as above
+            found = json.loads(reply.read() or b"{}")
+        line = found["routes"][0]["geometry"]["coordinates"]
+    except (OSError, json.JSONDecodeError, KeyError, IndexError, TypeError):
+        return []
+    return [(float(lat), float(lon)) for lon, lat in line]
+
+
+def thinned(road: list[tuple[float, float]], step: float = ALONG_STEP_METRES) -> list[tuple[float, float]]:
+    """Every `step` metres of a road, with both its ends."""
+    if len(road) < 2:  # noqa: PLR2004 — a road has two ends
+        return road
+    kept, since = [road[0]], 0.0
+    for before, here in itertools.pairwise(road):
+        since += metres_between(Fix(before[0], before[1], None, None, 0.0), here[0], here[1])
+        if since >= step:
+            kept.append(here)
+            since = 0.0
+    if kept[-1] != road[-1]:
+        kept.append(road[-1])
+    return kept
+
+
+def sights_along(road: list[tuple[float, float]], fetch: Fetch | None = None) -> list[dict[str, Any]] | None:
+    """What has a name along a road: places, farms, water, bridges and sights, in the order passed."""
+    points = thinned(road)
+    if not points:
+        return []
+    line = ",".join(f"{lat:.5f},{lon:.5f}" for lat, lon in points)
+    query = (
+        f"[out:json][timeout:{int(ALONG_SECONDS)}];"
+        f"nwr(around:{ALONG_METRES},{line})[name]"
+        '[~"^(place|tourism|historic|natural|water|man_made|wikipedia|bridge)$"~"."];'
+        "out center 400;"
+        # Roads with their whole line, so a side road is placed where it meets the route.
+        f"way(around:{ALONG_METRES // 4},{line})[highway~{THROUGH_ROADS}][name];"
+        "out geom 200;"
+    )
+    try:
+        found = fetch(query) if fetch else _overpass(query, ALONG_SECONDS)
+    except (OSError, json.JSONDecodeError):
+        # RULE: a map database that does not answer is said, never taken for an empty road
+        return None  # not answered
+    return _in_order(found.get("elements", []), points)
+
+
+#: The widest stretch, in degrees of latitude or longitude, searched as one box.
+BOX_DEGREES = 0.15
+
+
+def sights_on_route(route: list[tuple[float, float]], fetch: Fetch | None = None) -> list[dict[str, Any]]:
+    """What has a name along a route already driven, in the order passed.
+
+    Overpass is asked for boxes around the route, never for the route itself,
+    so where Roy drove stays on this machine; the box is narrowed to the road
+    here.
+    """
+    points = thinned(route)
+    found: list[dict[str, Any]] = []
+    for box in _boxes(points):
+        south, west, north, east = box
+        pad = ALONG_METRES / 111_320
+        bbox = f"{south - pad:.4f},{west - pad * 2:.4f},{north + pad:.4f},{east + pad * 2:.4f}"
+        query = (
+            f"[out:json][timeout:{int(ALONG_SECONDS)}][bbox:{bbox}];"
+            '(nwr[name][~"^(place|tourism|historic|natural|water|man_made|wikipedia|bridge)$"~"."];'
+            f"way[highway~{THROUGH_ROADS}][name];);"
+            "out center 2000;"
+        )
+        try:
+            found += (fetch(query) if fetch else _overpass(query, ALONG_SECONDS)).get("elements", [])
+        except (OSError, json.JSONDecodeError):
+            continue
+    here = [Fix(lat, lon, None, None, 0.0) for lat, lon in points]
+    # RULE: only what lies along the route is kept from the boxes
+    close = [
+        element
+        for element in found
+        if isinstance(element, dict)
+        and (centre := _centre(element)) is not None
+        and any(metres_between(point, *centre) <= ALONG_METRES for point in here)
+    ]
+    return _in_order(close, points)
+
+
+def _boxes(points: list[tuple[float, float]], widest: float = 0.0) -> list[tuple[float, float, float, float]]:
+    """South, west, north and east of each stretch of the route no wider than BOX_DEGREES."""
+    boxes: list[tuple[float, float, float, float]] = []
+    stretch: list[tuple[float, float]] = []
+    for point in points:
+        trial = [*stretch, point]
+        lats, lons = [p[0] for p in trial], [p[1] for p in trial]
+        limit = widest or BOX_DEGREES
+        if stretch and (max(lats) - min(lats) > limit or max(lons) - min(lons) > limit):
+            boxes.append(_box(stretch))
+            stretch = [stretch[-1], point]
+        else:
+            stretch = trial
+    if stretch:
+        boxes.append(_box(stretch))
+    return boxes
+
+
+def _box(points: list[tuple[float, float]]) -> tuple[float, float, float, float]:
+    lats, lons = [p[0] for p in points], [p[1] for p in points]
+    return min(lats), min(lons), max(lats), max(lons)
+
+
+def _in_order(elements: list[Any], points: list[tuple[float, float]]) -> list[dict[str, Any]]:
+    """Each named thing once, with what it is and where, in the order the points pass it."""
+    listed: dict[str, dict[str, Any]] = {}
+    for element in elements:
+        centre = _meeting(element, points) if isinstance(element, dict) else None
+        if centre is None:
+            continue
+        tags = element.get("tags", {})
+        name = str(tags.get("name", ""))
+        if not name or name in listed:
+            continue
+        nearest = min(range(len(points)), key=lambda i: _apart(points[i], centre))
+        listed[name] = {
+            "name": name,
+            "kind": "vei" if "highway" in tags else _kind(tags),
+            "latitude": round(centre[0], 6),
+            "longitude": round(centre[1], 6),
+            "wikipedia": tags.get("wikipedia"),
+            # A road's number, such as "Fv 410", and anything else the map knows that is worth saying.
+            "ref": tags.get("ref"),
+            "population": tags.get("population"),
+            "height": tags.get("height") or tags.get("ele"),
+            "order": nearest,
+        }
+    return sorted(listed.values(), key=lambda sight: sight["order"])
+
+
+#: The roads whose meetings make a test point: any a car drives on, side streets included.
+TEST_ROADS = (
+    '"^(motorway|trunk|primary|secondary|tertiary|unclassified|motorway_link|trunk_link|primary_link)$"'
+)
+#: Two meetings of roads closer than this are one junction, or a roundabout's own exits.
+SAME_CROSSING_METRES = 60
+#: Junctions are asked for in boxes this small, or the map database takes too long.
+TEST_BOX_DEGREES = 0.04
+#: A test point farther than this from the road driven is not on it.
+TEST_NEAR_METRES = 40
+
+
+def crossings_along(
+    road: list[tuple[float, float]], fetch: Fetch | None = None
+) -> list[dict[str, Any]] | None:
+    """Roundabouts and junctions on a road, in the order passed: for testing how well telling is timed.
+
+    Roy, 2026-10-12: say when we are at a roundabout or a junction, to hear
+    how accurate the triggers are. A junction is where the road meets
+    another road with another name; a roundabout is told once, at its middle.
+    """
+    points = thinned(road, 200)
+    if not points:
+        return []
+    found = _roads_around(points, fetch)
+    if found is None:
+        return None
+    nodes = {e["id"]: (e["lat"], e["lon"]) for e in found if e.get("type") == "node" and "lat" in e}
+    ways = [e for e in found if e.get("type") == "way"]
+    on_road = [Fix(lat, lon, None, None, 0.0) for lat, lon in densified(road, TEST_NEAR_METRES / 2)]
+
+    def near(at: tuple[float, float]) -> bool:
+        return any(metres_between(point, *at) <= TEST_NEAR_METRES for point in on_road)
+
+    crossings = _roundabouts(ways, nodes, near)
+    crossings += _junctions(ways, nodes, near, crossings)
+    return _in_order(
+        [
+            {"type": "node", "lat": c["latitude"], "lon": c["longitude"], "tags": {"name": c["name"]}}
+            for c in crossings
+        ],
+        points,
+    )
+
+
+def _roads_around(points: list[tuple[float, float]], fetch: Fetch | None) -> list[dict[str, Any]] | None:
+    """Every road a car drives on around the points, with its nodes; None when the database never answers."""
+    found: list[dict[str, Any]] = []
+    answered = 0
+    for south, west, north, east in _boxes(points, TEST_BOX_DEGREES):
+        pad = 0.002
+        bbox = f"{south - pad:.4f},{west - pad * 2:.4f},{north + pad:.4f},{east + pad * 2:.4f}"
+        query = (
+            f"[out:json][timeout:{int(ALONG_SECONDS)}][bbox:{bbox}];"
+            f"way[highway~{TEST_ROADS}];"
+            "out body;>;out skel qt;"
+        )
+        answer = _patiently(query, fetch)
+        if answer is not None:
+            found += answer.get("elements", [])
+            answered += 1
+    return found if answered else None
+
+
+def _roundabouts(
+    ways: list[dict[str, Any]],
+    nodes: dict[int, tuple[float, float]],
+    near: Callable[[tuple[float, float]], bool],
+) -> list[dict[str, Any]]:
+    """The middle of each roundabout the road passes through."""
+    found = []
+    for way in ways:
+        if way.get("tags", {}).get("junction") not in ("roundabout", "circular"):
+            continue
+        ring = [nodes[n] for n in way.get("nodes", []) if n in nodes]
+        if ring and any(near(at) for at in ring):
+            middle = (sum(a for a, _ in ring) / len(ring), sum(b for _, b in ring) / len(ring))
+            found.append({"name": "Rundkjøring", "latitude": middle[0], "longitude": middle[1]})
+    return found
+
+
+def _road_said(tags: dict[str, Any]) -> str:
+    """A road as it is said aloud: "fylkesvei 410", "E 18", its name, or "en sidevei"."""
+    ref = str(tags.get("ref") or "").strip()
+    if ref.isdigit():
+        return f"fylkesvei {ref}"
+    return ref or str(tags.get("name") or "").strip() or "en sidevei"
+
+
+def _junctions(
+    ways: list[dict[str, Any]],
+    nodes: dict[int, tuple[float, float]],
+    near: Callable[[tuple[float, float]], bool],
+    already: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Each place on the road where it meets a road with another name, once per junction."""
+    names_at: dict[int, set[str]] = {}
+    for way in ways:
+        tags = way.get("tags", {})
+        if tags.get("junction") in ("roundabout", "circular"):
+            continue
+        label = _road_said(tags)
+        for n in way.get("nodes", []):
+            names_at.setdefault(n, set()).add(label)
+    found: list[dict[str, Any]] = []
+    for node, names in names_at.items():
+        if len(names) < 2 or node not in nodes or not near(nodes[node]):  # noqa: PLR2004 — two roads meet
+            continue
+        at = nodes[node]
+        if any(
+            metres_between(Fix(c["latitude"], c["longitude"]), *at) < SAME_CROSSING_METRES
+            for c in [*already, *found]
+        ):
+            continue  # the same junction, or a roundabout's own exits
+        found.append(
+            {"name": "Kryss: " + " og ".join(sorted(names)[:3]), "latitude": at[0], "longitude": at[1]}
+        )
+    return found
+
+
+def densified(road: list[tuple[float, float]], step: float) -> list[tuple[float, float]]:
+    """The road with a point at least every `step` metres, filling in long straight stretches."""
+    points: list[tuple[float, float]] = road[:1]
+    for (lat0, lon0), (lat1, lon1) in itertools.pairwise(road):
+        length = metres_between(Fix(lat0, lon0), lat1, lon1)
+        pieces = max(1, math.ceil(length / step))
+        points += [
+            (lat0 + (lat1 - lat0) * i / pieces, lon0 + (lon1 - lon0) * i / pieces)
+            for i in range(1, pieces + 1)
+        ]
+    return points
+
+
+def _patiently(query: str, fetch: Fetch | None, tries: int = 3) -> dict[str, Any] | None:
+    """Ask the map database, trying again after a pause when it is busy; None if it never answers."""
+    for attempt in range(tries):
+        try:
+            return fetch(query) if fetch else _overpass(query, ALONG_SECONDS)
+        except (OSError, json.JSONDecodeError):
+            if attempt + 1 < tries and fetch is None:
+                time.sleep(5 * (attempt + 1))
+    return None
+
+
+def _meeting(element: dict[str, Any], points: list[tuple[float, float]]) -> tuple[float, float] | None:
+    """Where a thing is: for a road with its line, the point of it nearest the route, where it meets it."""
+    line = element.get("geometry")
+    if isinstance(line, list) and line and points:
+        # RULE: a side road is placed where it meets the route
+        vertices = [(float(v["lat"]), float(v["lon"])) for v in line if "lat" in v and "lon" in v]
+        if vertices:
+            return min(vertices, key=lambda v: min(_apart(v, p) for p in points))
+    return _centre(element)
+
+
+def _apart(a: tuple[float, float], b: tuple[float, float]) -> float:
+    return (a[0] - b[0]) ** 2 + ((a[1] - b[1]) * 0.5) ** 2
+
+
+#: Other copies of the same map database, asked in turn when one is busy: on 2026-10-10 the main
+#: one answered 504 to a whole road, and the road looked empty.
+NEARBY_MIRRORS = (
+    "https://overpass.private.coffee/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+)
+
+
+def _overpass(query: str, seconds: float = NEARBY_SECONDS) -> dict[str, Any]:
+    """Ask the map database, trying the next copy when one is busy or down; raise only when all fail."""
+    failure: OSError | None = None
+    for url in (NEARBY_URL, *NEARBY_MIRRORS):
+        request = urllib.request.Request(  # noqa: S310 — fixed https addresses
+            url,
+            data=urllib.parse.urlencode({"data": query}).encode(),
+            headers={"User-Agent": POLITE},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=seconds + 2) as reply:  # noqa: S310 — fixed https addresses
+                found = json.loads(reply.read() or b"{}")
+        except OSError as busy:
+            failure = busy
+            continue
+        return found if isinstance(found, dict) else {}
+    raise failure or OSError("no map database answered")
 
 
 def _centre(element: dict[str, Any]) -> tuple[float, float] | None:
@@ -198,7 +609,18 @@ def _centre(element: dict[str, Any]) -> tuple[float, float] | None:
 
 
 def _kind(tags: dict[str, Any]) -> str:
-    for key in ("amenity", "tourism", "historic", "natural", "leisure", "place", "man_made", "building"):
+    for key in (
+        "amenity",
+        "tourism",
+        "historic",
+        "natural",
+        "water",
+        "leisure",
+        "place",
+        "man_made",
+        "building",
+        "bridge",
+    ):
         value = str(tags.get(key, ""))
         if value in _KIND:
             return _KIND[value]

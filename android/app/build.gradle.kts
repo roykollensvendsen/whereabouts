@@ -12,8 +12,8 @@ android {
         // Android 10: the oldest that gives a foreground service a location type.
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 25
+        versionName = "0.25"
     }
 
     compileOptions {
@@ -27,4 +27,6 @@ android {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    // The real org.json, since the one in android.jar only throws in unit tests.
+    testImplementation("org.json:json:20240303")
 }

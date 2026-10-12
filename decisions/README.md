@@ -32,6 +32,7 @@ decision nobody writes down.
 | [W-001](ADR-W-001-a-service-of-its-own-on-this-machine-answering-over-mcp.md) | A service of its own, on this machine, answering over MCP | Accepted |
 | [W-002](ADR-W-002-the-route-is-kept-thirty-days-on-this-machine.md) | The route is kept thirty days on this machine, and wiped on request | Accepted |
 | [W-003](ADR-W-003-a-change-is-a-pull-request-made-in-step-with-the-bridge.md) | A change is a pull request, made in step with the voice bridge | Accepted |
+| [W-004](ADR-W-004-places-are-described-here-and-told-by-the-phone.md) | Places are described here, kept, and told by the phone as Roy passes | Accepted |
 
 What is deliberately left undone, and what would make each worth doing, is
 [`deferred.md`](deferred.md). A thing left undone with no trigger is a thing

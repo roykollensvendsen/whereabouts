@@ -38,3 +38,93 @@ name = "the login code is shown only to the owner's own tailnet login"
 file = "src/whereabouts/public.py"
 find = 'if not login or login != allowed\.casefold\(\) or not secret:'
 replace = 'if not secret:'
+
+[[rule]]
+name = "one call describes at most MAX_PLACES"
+file = "src/whereabouts/described.py"
+find = 'if len\(places\) > MAX_PLACES:'
+replace = 'if False:'
+
+[[rule]]
+name = "a place's radius is kept within what a car can use"
+file = "src/whereabouts/described.py"
+find = '"radius_m": round\(min\(max\(radius, SMALLEST_RADIUS_M\), LARGEST_RADIUS_M\)\),'
+replace = '"radius_m": round(radius),'
+
+[[rule]]
+name = "a place described again is updated, not added twice"
+file = "src/whereabouts/described.py"
+find = 'if same is not None:'
+replace = 'if False:'
+
+[[rule]]
+name = "a note is never merged with a place or another note"
+file = "src/whereabouts/described.py"
+find = 'if kind == NOTE:'
+replace = 'if False:'
+
+[[rule]]
+name = "news is told only until it fades"
+file = "src/whereabouts/described.py"
+find = '" AND \(until IS NULL OR until > \?\)",'
+replace = '" AND (until IS NULL OR until > ? OR 1)",'
+
+[[rule]]
+name = "only what lies along the route is kept from the boxes"
+file = "src/whereabouts/geo.py"
+find = 'and any\(metres_between\(point, \*centre\) <= ALONG_METRES for point in here\)'
+replace = 'and True'
+
+[[rule]]
+name = "a pretend drive is never kept in the route"
+file = "src/whereabouts/server.py"
+find = 'pretending\.update\(latitude=latitude, longitude=longitude, at=time\.time\(\)\)'
+replace = 'route.add(geo.Fix(latitude, longitude, None, None, time.time())); pretending.update(latitude=latitude, longitude=longitude, at=time.time())'
+
+[[rule]]
+name = "a side road is placed where it meets the route"
+file = "src/whereabouts/geo.py"
+find = 'return min\(vertices, key=lambda v: min\(_apart\(v, p\) for p in points\)\)'
+replace = 'return vertices[0]'
+
+[[rule]]
+name = "what lies behind higher ground or forest cannot be seen"
+file = "src/whereabouts/view.py"
+find = 'if math\.atan2\(z \+ TARGET - eyes, metres\) >= highest:'
+replace = 'if True:'
+
+[[rule]]
+name = "a map database that does not answer is said, never taken for an empty road"
+file = "src/whereabouts/geo.py"
+find = 'return None  # not answered'
+replace = 'return []'
+
+[[rule]]
+name = "what was told is kept as long as the route, and no longer"
+file = "src/whereabouts/described.py"
+find = 'self\.db\.execute\("DELETE FROM told WHERE at < \?", \(time\.time\(\) - KEPT_DAYS \* 86400,\)\)'
+replace = 'pass'
+
+[[rule]]
+name = "a silence of TRIP_PAUSE begins a new drive"
+file = "src/whereabouts/store.py"
+find = 'if after - before >= TRIP_PAUSE:'
+replace = 'if False:'
+
+[[rule]]
+name = "a note is placed by a precise reading when there is one"
+file = "src/whereabouts/server.py"
+find = 'precise = \[fix for fix in recent if fix\.accuracy is None or fix\.accuracy <= PRECISE_METRES\]'
+replace = 'precise = recent'
+
+[[rule]]
+name = "the view reaches only as far as the ground is seen without a break"
+file = "src/whereabouts/view.py"
+find = 'if metres not in seen:'
+replace = 'if False:'
+
+[[rule]]
+name = "a reading sent late keeps the time it was measured"
+file = "src/whereabouts/geo.py"
+find = 'back = LATE_SECONDS if late else TRUSTED_SKEW_SECONDS'
+replace = 'back = TRUSTED_SKEW_SECONDS'

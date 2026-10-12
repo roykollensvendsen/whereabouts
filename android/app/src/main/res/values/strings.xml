@@ -8,4 +8,29 @@
     <string name="channel">Posisjon</string>
     <string name="following_title">Følger deg</string>
     <string name="following_text">Sender posisjon, retning og fart når de endrer seg.</string>
+    <string name="telling">Fortell om steder jeg passerer</string>
+    <string name="pretend_title">Prøvetur: hør hva som fortelles langs veien</string>
+    <string name="pretend_from">Fra, for eksempel Arendal</string>
+    <string name="pretend_to">Til, for eksempel Tvedestrand</string>
+    <string name="pretend_faster">Fart: %1$d×</string>
+    <string name="pretend_start">Start prøvetur</string>
+    <string name="pretend_stop">Stopp prøvetur</string>
+    <string name="pretend_stopped">Prøveturen er stoppet.</string>
+    <string name="hide_map">Skjul kartet</string>
+    <string name="try_sound">Prøv opplesning</string>
+    <string name="sound_test">Dette er en prøve fra Hvor er jeg. Hører du meg i bilen?</string>
+    <string name="sound_goes">Opplesningen går til %1$s.</string>
+    <string name="over_handsfree">Les opp over handsfree, som en samtale</string>
+    <string name="power_warning">Advarsel: %1$s. Trykk her for innstillingene.</string>
+    <string name="version">Hvor er jeg, versjon %1$s</string>
+    <string name="gps_every">GPS hvert %1$d s</string>
+    <string name="fallback_after">Mobilnett etter %1$d s</string>
+    <string name="note_lag">Meldinger plasseres %1$d s tilbake</string>
+    <string name="full_screen">Fullskjerm</string>
+    <string name="close_full">Lukk</string>
+    <string name="reach_ok">Forbindelse til tjenesten: OK</string>
+    <string name="reach_none">Ingen forbindelse til tjenesten. Sjekk at Tailscale er på.</string>
+    <string name="reach_checking">Sjekker forbindelsen …</string>
+    <string name="map_unreachable"><![CDATA[<body style="font:18px system-ui;padding:24px;background:white;color:black"><h3>Kartet kom ikke fram</h3><p>Telefonen når ikke tjenesten på maskinen. Sjekk at Tailscale er på og står som tilkoblet, og prøv igjen.</p><p style="color:gray">(%1$s)</p></body>]]></string>
+    <string name="test_points">Testpunkter: kryss og rundkjøringer</string>
 </resources>

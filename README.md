@@ -73,6 +73,24 @@ lookups or what lies ahead. Its instructions say never to read them aloud.
 | `whats_around` | Named things on one side: `venstre`, `høyre`, `foran` or `bak`. |
 | `route_taken` | How far, from where to where, and how long, over the last minutes. |
 | `forget_route` | Wipes the whole route, as "slett ruta" asks. |
+| `sights_near` | Named sights near a point, with their Wikipedia article, worth describing. |
+| `describe_places` | Keeps places Hermes has written about, for the phone to tell of as Roy passes. |
+| `described_near` | The places already described near a point, so none is described twice. |
+| `sights_along` | Everything with a name along the road between two points: villages, farms, water, roads and sights. |
+| `sights_on_route_taken` | What has a name along the route driven in the last hours and is not described yet. |
+| `add_local_news` | Fresh local news about a place, told for some days and then gone. |
+| `leave_note` | Leaves what Roy says where he is now, read back to him the next time he passes. |
+| `forget_described` | Stops telling of a place, or of a note by a few of its words. |
+
+How Hermes writes about places is in the skill
+[`hermes/skills/stedsguide`](hermes/skills/stedsguide/SKILL.md), linked into
+Hermes's skills folder; it is improved from Roy's feedback and from going
+through his drives afterwards.
+
+What Hermes writes about a place is kept until forgotten, so the phone tells
+of it every time Roy drives past, and there are more such places as time goes
+on. The phone fetches those near Roy from `/described`; why it works this way is
+[ADR-W-004](decisions/ADR-W-004-places-are-described-here-and-told-by-the-phone.md).
 
 ## From Claude on the web
 
