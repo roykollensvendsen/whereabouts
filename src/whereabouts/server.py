@@ -518,7 +518,19 @@ def view_routes(
         body = await asyncio.to_thread(view.packed, heights, latitude, longitude, km * 1000)
         return Response(body, media_type="application/octet-stream")
 
-    return [("/view", "GET", seen), ("/land.bin", "GET", land)]
+    return [("/view", "GET", seen), ("/land.bin", "GET", land), *land_shape_routes(heights)]
+
+
+def land_shape_routes(
+    heights: view.Heights,
+) -> list[tuple[str, str, Callable[[Request], Awaitable[Response]]]]:
+    """Where land is kept, for the map."""
+
+    async def land_shape(_: Request) -> Response:
+        """Where land is kept, as 1 km blocks, for the map's "Høydedata" layer."""
+        return JSONResponse({"blocks": await asyncio.to_thread(view.coverage, heights)})
+
+    return [("/land.json", "GET", land_shape)]
 
 
 def telling_routes(route: Route) -> list[tuple[str, str, Callable[[Request], Awaitable[Response]]]]:
@@ -797,6 +809,18 @@ MAP = """<!doctype html>
     cachedText.textContent = `Lagret på telefonen: ${count} steder, hentet kl. ${when}`;
     cachedText.style.display = "block";
   };
+
+  // Roy, 2026-10-12: where height data covers, so the view can be worked out on the phone without network.
+  const landLayer = L.layerGroup();
+  landLayer.on("add", async () => {
+    landLayer.clearLayers();
+    const kept = await fetch("land.json").then((r) => r.json()).catch(() => ({ blocks: [] }));
+    for (const bounds of kept.blocks) {
+      L.rectangle(bounds, { stroke: false, fillColor: "#a0522d", fillOpacity: 0.18, interactive: false })
+        .addTo(landLayer);
+    }
+  });
+  L.control.layers(null, { "Høydedata": landLayer }, { position: "topright", collapsed: false }).addTo(map);
 
   const legend = L.control({ position: "bottomleft" });
   legend.onAdd = () => Object.assign(document.createElement("div"), {

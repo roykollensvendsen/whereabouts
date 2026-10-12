@@ -169,6 +169,43 @@ def packed(heights: Heights, latitude: float, longitude: float, metres: float) -
     return json.dumps(header).encode() + b"\n" + bytes(body)
 
 
+#: The coverage shown on the map is in blocks of this many cells a side: 20 cells, about 1 km.
+BLOCK = 20
+#: A block counts as covered when at least this share of its cells is kept.
+BLOCK_SHARE = 0.5
+
+
+def coverage(heights: Heights) -> list[list[list[float]]]:
+    """Where land is kept, as rectangles of 1 km blocks merged along each row, for the map.
+
+    Each rectangle is [[south, west], [north, east]].
+    """
+    counts: dict[tuple[int, int], int] = {}
+    with heights.lock:
+        for (cell,) in heights.db.execute("SELECT cell FROM heights WHERE z IS NOT NULL"):
+            row, col = (int(x) for x in cell.split(":"))
+            block = (row // BLOCK, col // BLOCK)
+            counts[block] = counts.get(block, 0) + 1
+    covered = sorted(block for block, n in counts.items() if n >= BLOCK * BLOCK * BLOCK_SHARE)
+    shapes: list[list[list[float]]] = []
+
+    def close(run: list[tuple[int, int]]) -> None:
+        row, first, last = run[0][0], run[0][1], run[-1][1]
+        south, north = row * BLOCK * GRID, (row + 1) * BLOCK * GRID
+        west, east = first * BLOCK * GRID * 2, (last + 1) * BLOCK * GRID * 2
+        shapes.append([[round(south, 5), round(west, 5)], [round(north, 5), round(east, 5)]])
+
+    run: list[tuple[int, int]] = []
+    for block in covered:
+        if run and (block[0] != run[-1][0] or block[1] != run[-1][1] + 1):
+            close(run)
+            run = []
+        run.append(block)
+    if run:
+        close(run)
+    return shapes
+
+
 def view(heights: Heights, latitude: float, longitude: float, heading: float) -> list[dict[str, Any]]:
     """Each ray across the half circle ahead: its bearing, how far it sees, and which distances it sees."""
     here = geo.Fix(latitude, longitude, None, None, 0.0)

@@ -111,3 +111,20 @@ def test_the_land_along_a_driven_road_is_packed_for_the_phone(route):
     _row, _col, decimetres, code = struct.unpack("<iihB", cells[:11])
     assert decimetres == 125
     assert about["codes"][code][0] == "Skog"
+
+
+def test_where_land_is_kept_is_shown_as_blocks(route):
+    heights = view.Heights(route, lambda points: [(10.0, "Skog") for _ in points])
+    # Two neighbouring 1 km blocks, fully kept, on one row: one rectangle.
+    row0, col0 = 130_000, 9_780
+    cells = [
+        (row * view.GRID, col * view.GRID * 2)
+        for row in range(row0, row0 + view.BLOCK)
+        for col in range(col0, col0 + 2 * view.BLOCK)
+    ]
+    heights.at(cells)
+    shapes = view.coverage(heights)
+    assert len(shapes) == 1
+    (south, west), (north, east) = shapes[0]
+    assert north > south
+    assert east - west > (north - south)  # two blocks wide, one tall
